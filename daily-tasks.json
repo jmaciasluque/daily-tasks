@@ -1,0 +1,133 @@
+{
+  "last_reset": "2026-01-06",
+  "next_id": 18,
+  "tasks": [
+    {
+      "id": 1,
+      "title": "Brush teeth and floss",
+      "duration": 5,
+      "status": "todo",
+      "order": 2
+    },
+    {
+      "id": 2,
+      "title": "Train Charlie",
+      "duration": 5,
+      "status": "todo",
+      "order": 6
+    },
+    {
+      "id": 3,
+      "title": "Typing",
+      "duration": 5,
+      "status": "todo",
+      "order": 5
+    },
+    {
+      "id": 4,
+      "title": "Garden",
+      "duration": 15,
+      "status": "todo",
+      "order": 10
+    },
+    {
+      "id": 5,
+      "title": "Meditate",
+      "duration": 15,
+      "status": "todo",
+      "order": 7
+    },
+    {
+      "id": 6,
+      "title": "Pictures",
+      "duration": 5,
+      "status": "todo",
+      "order": 11
+    },
+    {
+      "id": 7,
+      "title": "Read",
+      "duration": 10,
+      "status": "todo",
+      "order": 8
+    },
+    {
+      "id": 8,
+      "title": "Piano",
+      "duration": 10,
+      "status": "todo",
+      "order": 12
+    },
+    {
+      "id": 9,
+      "title": "Fitness",
+      "duration": 5,
+      "status": "todo",
+      "order": 9
+    },
+    {
+      "id": 10,
+      "title": "Walk Charlie",
+      "duration": 5,
+      "status": "todo",
+      "order": 13
+    },
+    {
+      "id": 11,
+      "title": "Diaries",
+      "duration": 5,
+      "status": "todo",
+      "order": 14
+    },
+    {
+      "id": 12,
+      "title": "Feeds",
+      "duration": 5,
+      "status": "done",
+      "order": 1
+    },
+    {
+      "id": 13,
+      "title": "Medicines",
+      "duration": 5,
+      "status": "done",
+      "order": 2
+    },
+    {
+      "id": 14,
+      "title": "Admin",
+      "duration": 5,
+      "status": "done",
+      "order": 3
+    },
+    {
+      "id": 15,
+      "title": "Say thanks",
+      "duration": 5,
+      "status": "todo",
+      "order": 3
+    },
+    {
+      "id": 16,
+      "title": "ASAP",
+      "duration": 5,
+      "status": "todo",
+      "order": 15
+    },
+    {
+      "id": 17,
+      "title": "Cleaning",
+      "duration": 15,
+      "status": "todo",
+      "order": 4
+    },
+    {
+      "id": 18,
+      "title": "Holiday",
+      "duration": 5,
+      "status": "todo",
+      "order": 20
+    }
+  ],
+  "theme_index": 18
+}
