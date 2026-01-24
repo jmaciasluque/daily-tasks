@@ -37,15 +37,16 @@ export function useTaskData() {
     }
   }, [initialized, settings.baseUrl, settings.username, settings.password, settings.remotePath]);
 
-  const syncFromRemote = useCallback(async () => {
-    if (!isSettingsComplete(settings)) {
+  const syncFromRemote = useCallback(async (overrideSettings?: Settings) => {
+    const activeSettings = overrideSettings ?? settings;
+    if (!isSettingsComplete(activeSettings)) {
       setStatusMsg('Configure WebDAV settings first.');
       return;
     }
-    
+
     setSyncing(true);
     try {
-      const result = await syncWithRemote(settings, data);
+      const result = await syncWithRemote(activeSettings, data);
       if (result.action !== 'error') {
         const normalized = resetIfNeeded(normalizeData(result.data));
         setData(normalized);
@@ -154,7 +155,11 @@ export function useTaskData() {
   const updateSettings = useCallback(async (newSettings: Settings) => {
     setSettingsState(newSettings);
     await saveSettings(newSettings);
-  }, []);
+    // Force a sync right after updating settings to pull remote before any local push
+    if (isSettingsComplete(newSettings)) {
+      await syncFromRemote(newSettings);
+    }
+  }, [syncFromRemote]);
 
   return {
     data,

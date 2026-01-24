@@ -1,5 +1,6 @@
 import { encode as base64Encode } from 'base-64';
 import type { Data, Settings } from '../types';
+import { normalizeData } from './data';
 
 export const defaultSettings: Settings = {
   baseUrl: '',
@@ -68,15 +69,18 @@ export type SyncResult = {
 
 export async function syncWithRemote(settings: Settings, localData: Data): Promise<SyncResult> {
   try {
-    const remote = await fetchRemoteData(settings);
-    
-    if (!remote) {
+    const remoteRaw = await fetchRemoteData(settings);
+
+    if (!remoteRaw) {
       // Remote doesn't exist, push local
       await pushRemoteData(settings, localData);
       return { data: localData, action: 'pushed', message: 'Created remote file' };
     }
 
-    const localTimestamp = localData.last_modified || 0;
+    const remote = normalizeData(remoteRaw);
+    const local = normalizeData(localData);
+
+    const localTimestamp = local.last_modified || 0;
     const remoteTimestamp = remote.last_modified || 0;
 
     if (remoteTimestamp > localTimestamp) {
@@ -84,11 +88,11 @@ export async function syncWithRemote(settings: Settings, localData: Data): Promi
       return { data: remote, action: 'pulled', message: 'Pulled newer remote data' };
     } else if (localTimestamp > remoteTimestamp) {
       // Local is newer
-      await pushRemoteData(settings, localData);
-      return { data: localData, action: 'pushed', message: 'Pushed local changes' };
+      await pushRemoteData(settings, local);
+      return { data: local, action: 'pushed', message: 'Pushed local changes' };
     }
 
-    return { data: localData, action: 'in_sync', message: 'Already in sync' };
+    return { data: local, action: 'in_sync', message: 'Already in sync' };
   } catch (err) {
     return { 
       data: localData, 
