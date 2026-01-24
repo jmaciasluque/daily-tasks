@@ -21,6 +21,8 @@ const defaultRemotePath = isTesting
   : '/remote.php/dav/files/<username>/.daily-tasks.json';
 
 const storagePrefix = isTesting ? 'dailyTasksTest' : 'dailyTasks';
+const projectId = baseConfig.expo?.extra?.eas?.projectId;
+const updatesUrl = projectId ? `https://u.expo.dev/${projectId}` : undefined;
 
 module.exports = {
   expo: {
@@ -36,8 +38,8 @@ module.exports = {
       ...baseConfig.expo.android,
       package: androidPackage,
     },
-    updates: baseConfig.expo.updates,
-    runtimeVersion: baseConfig.expo.runtimeVersion,
+    updates: updatesUrl ? { url: updatesUrl } : baseConfig.expo.updates,
+    runtimeVersion: { policy: 'appVersion' },
     extra: {
       ...baseConfig.expo.extra,
       appVariant,
