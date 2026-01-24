@@ -1,6 +1,6 @@
 module daily-tasks
 
-go 1.21
+go 1.24
 
 require (
 	github.com/charmbracelet/bubbles v0.21.0
