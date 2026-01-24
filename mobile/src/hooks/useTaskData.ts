@@ -3,6 +3,7 @@ import type { Data, Settings, Task } from '../types';
 import { emptyData, normalizeData, resetIfNeeded, nextOrder, orderedTasks } from '../services/data';
 import { loadSettings, saveSettings, loadCachedData, saveCachedData } from '../services/storage';
 import { isSettingsComplete, pushRemoteData, syncWithRemote, defaultSettings } from '../services/webdav';
+import { appVariant } from '../config/env';
 
 export function useTaskData() {
   const [data, setData] = useState<Data>(emptyData());
@@ -16,10 +17,14 @@ export function useTaskData() {
     (async () => {
       const loadedSettings = await loadSettings();
       setSettingsState(loadedSettings);
-      
+
       const cached = await loadCachedData();
       setData(resetIfNeeded(cached));
       setInitialized(true);
+
+      if (appVariant !== 'production') {
+        setStatusMsg('Testing build: syncing with .daily-tasks-test.json');
+      }
     })();
   }, []);
 
