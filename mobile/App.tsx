@@ -156,7 +156,7 @@ export default function App() {
           <Pressable onPress={openAdd} style={[styles.primaryButton, { backgroundColor: theme.accent }]}>
             <Text style={styles.primaryButtonText}>Add Task</Text>
           </Pressable>
-          <Pressable onPress={syncFromRemote} style={[styles.secondaryButton, { borderColor: theme.border }]}>
+          <Pressable onPress={() => syncFromRemote()} style={[styles.secondaryButton, { borderColor: theme.border }]}>
             <Text style={{ color: theme.text }}>{syncing ? 'Syncing...' : 'Sync'}</Text>
           </Pressable>
         </View>
