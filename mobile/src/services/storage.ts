@@ -2,9 +2,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { Data, Settings } from '../types';
 import { defaultSettings } from './webdav';
 import { emptyData, normalizeData } from './data';
+import { storagePrefix } from '../config/env';
 
-export const STORAGE_SETTINGS = 'dailyTasksSettings';
-export const STORAGE_CACHE = 'dailyTasksCache';
+const STORAGE_SETTINGS = `${storagePrefix}Settings`;
+const STORAGE_CACHE = `${storagePrefix}Cache`;
 
 export async function loadSettings(): Promise<Settings> {
   try {

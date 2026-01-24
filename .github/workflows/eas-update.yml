@@ -1,0 +1,48 @@
+name: EAS Update (OTA)
+
+on:
+  push:
+    branches: ['**']
+    paths:
+      - 'mobile/**'
+      - '!mobile/app.json'  # app.json changes need full rebuild
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Setup Expo
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Install dependencies
+        working-directory: ./mobile
+        run: npm ci
+
+      - name: Publish update
+        working-directory: ./mobile
+        run: |
+          if [ "${{ github.ref_name }}" = "main" ]; then
+            BRANCH=production
+            APP_VARIANT=production
+            APP_VERSION_SUFFIX=
+          else
+            BRANCH=testing
+            APP_VARIANT=testing
+            APP_VERSION_SUFFIX=${GITHUB_SHA}
+          fi
+          APP_VARIANT=$APP_VARIANT APP_VERSION_SUFFIX=$APP_VERSION_SUFFIX \
+            eas update --branch "$BRANCH" --message "${{ github.event.head_commit.message }}"

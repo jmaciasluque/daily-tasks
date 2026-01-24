@@ -1,12 +1,13 @@
 import { encode as base64Encode } from 'base-64';
 import type { Data, Settings } from '../types';
 import { normalizeData } from './data';
+import { defaultRemotePath } from '../config/env';
 
 export const defaultSettings: Settings = {
   baseUrl: '',
   username: '',
   password: '',
-  remotePath: '/remote.php/dav/files/<username>/.daily-tasks.json',
+  remotePath: defaultRemotePath,
 };
 
 export function isSettingsComplete(settings: Settings): boolean {

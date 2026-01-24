@@ -30,4 +30,4 @@ jobs:
 
       - name: Type check
         working-directory: ./mobile
-        run: npx tsc --noEmit
+        run: APP_VARIANT=testing APP_VERSION_SUFFIX=ci npx tsc --noEmit
