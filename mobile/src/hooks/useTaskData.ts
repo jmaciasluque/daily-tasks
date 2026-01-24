@@ -26,7 +26,7 @@ export function useTaskData() {
         setStatusMsg('Testing build: syncing with .daily-tasks-test.json');
       }
     })();
-  }, []);
+  }, [appVariant]);
 
   // Save data to cache whenever it changes
   useEffect(() => {

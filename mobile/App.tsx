@@ -1,5 +1,6 @@
 import { StatusBar } from 'expo-status-bar';
-import React, { useMemo, useState } from 'react';
+import * as Updates from 'expo-updates';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   FlatList,
@@ -38,10 +39,30 @@ export default function App() {
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [pendingSettings, setPendingSettings] = useState<Settings>(settings);
+  const [updateReady, setUpdateReady] = useState(false);
 
   const theme = useMemo(() => getTheme(data.theme_index), [data.theme_index]);
   const list = orderedTasks(data, activeStatus);
   const statusBarStyle = isLightColor(theme.bg) ? 'dark' : 'light';
+
+  useEffect(() => {
+    const checkUpdates = async () => {
+      try {
+        if (!Updates.isEnabled) {
+          return;
+        }
+        const update = await Updates.checkForUpdateAsync();
+        if (update.isAvailable) {
+          await Updates.fetchUpdateAsync();
+          setUpdateReady(true);
+        }
+      } catch {
+        // Ignore update errors
+      }
+    };
+
+    checkUpdates();
+  }, []);
 
   const openAdd = () => {
     setEditingTask(null);
@@ -163,12 +184,23 @@ export default function App() {
         </View>
 
         {statusMsg ? <Text style={[styles.status, { color: theme.muted }]}>{statusMsg}</Text> : null}
-      <Text style={[styles.status, { color: theme.muted }]}>
-        Version {appVersion}{appVariant !== 'production' && appVersionSuffix ? `-${appVersionSuffix.slice(0, 7)}` : ''}
-      </Text>
-      {appVariant !== 'production' ? (
-        <Text style={[styles.status, { color: theme.muted }]}>Test build</Text>
-      ) : null}
+        <Text style={[styles.status, { color: theme.muted }]}>
+          Version {appVersion}{appVariant !== 'production' && appVersionSuffix ? `-${appVersionSuffix.slice(0, 7)}` : ''}
+        </Text>
+        {appVariant !== 'production' ? (
+          <Text style={[styles.status, { color: theme.muted }]}>Test build</Text>
+        ) : null}
+        {updateReady ? (
+          <View style={styles.updateBanner}>
+            <Text style={[styles.status, { color: theme.muted }]}>Update available</Text>
+            <Pressable
+              onPress={() => Updates.reloadAsync()}
+              style={[styles.smallButton, { borderColor: theme.border }]}
+            >
+              <Text style={{ color: theme.text }}>Restart</Text>
+            </Pressable>
+          </View>
+        ) : null}
 
         {/* Modals */}
         <TaskEditor
@@ -273,6 +305,13 @@ const styles = StyleSheet.create({
   },
   status: {
     textAlign: 'center',
+    paddingBottom: 12,
+  },
+  updateBanner: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
     paddingBottom: 12,
   },
 });

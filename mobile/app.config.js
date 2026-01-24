@@ -12,7 +12,7 @@ const version = isTesting && versionSuffix
   : baseVersion;
 
 const name = isTesting ? 'Daily Tasks (Test)' : baseConfig.expo.name;
-const slug = isTesting ? 'daily-tasks-test' : baseConfig.expo.slug;
+const slug = baseConfig.expo.slug;
 const androidPackage = isTesting ? 'com.dailytasks.app.test' : 'com.dailytasks.app';
 const iosBundleId = isTesting ? 'com.dailytasks.app.test' : 'com.dailytasks.app';
 
