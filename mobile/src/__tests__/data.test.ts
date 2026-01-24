@@ -24,7 +24,7 @@ describe('emptyData', () => {
     expect(data.next_id).toBe(1);
     expect(data.tasks).toEqual([]);
     expect(data.theme_index).toBe(0);
-    expect(data.last_modified).toBeGreaterThan(0);
+    expect(data.last_modified).toBe(0); // 0 so remote data wins on first sync
   });
 });
 

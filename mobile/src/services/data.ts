@@ -11,7 +11,7 @@ export function emptyData(): Data {
     next_id: 1,
     tasks: [],
     theme_index: 0,
-    last_modified: Date.now(),
+    last_modified: 0, // Start with 0 so remote data always wins on first sync
   };
 }
 
@@ -21,7 +21,7 @@ export function normalizeData(input: Data): Data {
     next_id: input.next_id || 1,
     tasks: Array.isArray(input.tasks) ? input.tasks : [],
     theme_index: Number.isFinite(input.theme_index) ? input.theme_index : 0,
-    last_modified: input.last_modified || Date.now(),
+    last_modified: input.last_modified || 0, // Keep 0 if not set, so remote wins
   };
   if (data.theme_index < 0 || data.theme_index >= THEMES.length) {
     data.theme_index = 0;
