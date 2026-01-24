@@ -36,6 +36,8 @@ module.exports = {
       ...baseConfig.expo.android,
       package: androidPackage,
     },
+    updates: baseConfig.expo.updates,
+    runtimeVersion: baseConfig.expo.runtimeVersion,
     extra: {
       ...baseConfig.expo.extra,
       appVariant,

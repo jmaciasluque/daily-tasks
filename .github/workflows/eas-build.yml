@@ -49,7 +49,7 @@ jobs:
               eas build --platform android --profile preview --non-interactive
           else
             APP_VARIANT=testing APP_VERSION_SUFFIX=${APP_VERSION_SUFFIX} \
-              eas build --platform android --profile testing --non-interactive
+              eas build --platform android --profile testing --non-interactive --no-wait
           fi
 
       - name: Build Android App Bundle (Play Store)
