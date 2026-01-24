@@ -15,7 +15,7 @@ import { useTaskData } from './src/hooks/useTaskData';
 import { orderedTasks } from './src/services/data';
 import { getTheme, isLightColor } from './src/theme/themes';
 import type { Task, Settings } from './src/types';
-import { appVariant, appVersionSuffix } from './src/config/env';
+import { appVariant, appVersionSuffix, appVersion } from './src/config/env';
 
 export default function App() {
   const {
@@ -163,8 +163,11 @@ export default function App() {
         </View>
 
         {statusMsg ? <Text style={[styles.status, { color: theme.muted }]}>{statusMsg}</Text> : null}
+      <Text style={[styles.status, { color: theme.muted }]}>
+        Version {appVersion}{appVariant !== 'production' && appVersionSuffix ? `-${appVersionSuffix.slice(0, 7)}` : ''}
+      </Text>
       {appVariant !== 'production' ? (
-        <Text style={[styles.status, { color: theme.muted }]}>Test build {appVersionSuffix ? `(${appVersionSuffix.slice(0, 7)})` : ''}</Text>
+        <Text style={[styles.status, { color: theme.muted }]}>Test build</Text>
       ) : null}
 
         {/* Modals */}

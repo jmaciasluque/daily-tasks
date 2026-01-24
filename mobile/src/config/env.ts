@@ -14,4 +14,8 @@ export const defaultRemotePath: string =
 
 export const storagePrefix: string = (extra.storagePrefix as string) || 'dailyTasks';
 
-export const appVersionSuffix: string = envVersionSuffix || '';
+export const appVersionSuffix: string =
+  envVersionSuffix || (extra.appVersionSuffix as string) || '';
+
+export const appVersion: string =
+  Constants.expoConfig?.version || '0.0.0';
