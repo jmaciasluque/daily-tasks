@@ -46,6 +46,7 @@ module.exports = {
       defaultRemotePath,
       storagePrefix,
       appVersionSuffix: versionSuffix,
+      commitHash: versionSuffix,
     },
   },
 };

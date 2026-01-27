@@ -17,5 +17,8 @@ export const storagePrefix: string = (extra.storagePrefix as string) || 'dailyTa
 export const appVersionSuffix: string =
   envVersionSuffix || (extra.appVersionSuffix as string) || '';
 
+export const commitHash: string =
+  (extra.commitHash as string) || appVersionSuffix || '';
+
 export const appVersion: string =
   Constants.expoConfig?.version || '0.0.0';

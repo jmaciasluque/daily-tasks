@@ -16,7 +16,7 @@ import { useTaskData } from './src/hooks/useTaskData';
 import { orderedTasks } from './src/services/data';
 import { getTheme, isLightColor } from './src/theme/themes';
 import type { Task, Settings } from './src/types';
-import { appVariant, appVersionSuffix, appVersion } from './src/config/env';
+import { appVariant, appVersionSuffix, appVersion, commitHash } from './src/config/env';
 
 const updateId = Updates.updateId ? Updates.updateId.slice(0, 7) : 'bundled';
 const updateChannel = Updates.channel ?? 'local';
@@ -192,6 +192,9 @@ export default function App() {
         <Text style={[styles.status, { color: theme.muted }]}>
           Version {appVersion}{appVariant !== 'production' && appVersionSuffix ? `-${appVersionSuffix.slice(0, 7)}` : ''}
         </Text>
+        {commitHash ? (
+          <Text style={[styles.status, { color: theme.muted }]}>Commit {commitHash.slice(0, 7)}</Text>
+        ) : null}
         <Text style={[styles.status, { color: theme.muted }]}>Update {updateId} · {updateChannel}</Text>
         {appVariant !== 'production' ? (
           <Text style={[styles.status, { color: theme.muted }]}>Test build</Text>
