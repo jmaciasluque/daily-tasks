@@ -18,6 +18,9 @@ import { getTheme, isLightColor } from './src/theme/themes';
 import type { Task, Settings } from './src/types';
 import { appVariant, appVersionSuffix, appVersion } from './src/config/env';
 
+const updateId = Updates.updateId ? Updates.updateId.slice(0, 7) : 'bundled';
+const updateChannel = Updates.channel ?? 'local';
+
 export default function App() {
   const {
     data,
@@ -189,6 +192,7 @@ export default function App() {
         <Text style={[styles.status, { color: theme.muted }]}>
           Version {appVersion}{appVariant !== 'production' && appVersionSuffix ? `-${appVersionSuffix.slice(0, 7)}` : ''}
         </Text>
+        <Text style={[styles.status, { color: theme.muted }]}>Update {updateId} · {updateChannel}</Text>
         {appVariant !== 'production' ? (
           <Text style={[styles.status, { color: theme.muted }]}>Test build</Text>
         ) : null}
