@@ -10,6 +10,7 @@ const baseVersion = baseConfig.expo.version;
 const version = isTesting && versionSuffix
   ? `${baseVersion}-${versionSuffix}`
   : baseVersion;
+const runtimeVersion = baseVersion;
 
 const name = isTesting ? 'Daily Tasks (Test)' : baseConfig.expo.name;
 const slug = baseConfig.expo.slug;
@@ -39,7 +40,7 @@ module.exports = {
       package: androidPackage,
     },
     updates: updatesUrl ? { url: updatesUrl } : baseConfig.expo.updates,
-    runtimeVersion: { policy: 'appVersion' },
+    runtimeVersion: runtimeVersion,
     extra: {
       ...baseConfig.expo.extra,
       appVariant,
