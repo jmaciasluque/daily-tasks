@@ -157,28 +157,22 @@ export function useTaskData() {
         return prev;
       }
 
-      const minOrder = Math.min(...list.map((t) => t.order || 0));
-      if (minOrder > 1) {
-        const newOrder = minOrder - 1;
-        return {
-          ...prev,
-          tasks: prev.tasks.map((t) =>
-            t.id === task.id ? { ...t, order: newOrder } : t
-          ),
-        };
-      }
+      const orderedIds = [
+        task.id,
+        ...list.filter((t) => t.id !== task.id).map((t) => t.id),
+      ];
 
-      // If the top order is 1, shift all tasks down and pin this task to 1.
       return {
         ...prev,
         tasks: prev.tasks.map((t) => {
           if (t.status !== task.status) {
             return t;
           }
-          if (t.id === task.id) {
-            return { ...t, order: 1 };
+          const idx = orderedIds.indexOf(t.id);
+          if (idx === -1) {
+            return t;
           }
-          return { ...t, order: (t.order || 0) + 1 };
+          return { ...t, order: idx + 1 };
         }),
       };
     });
