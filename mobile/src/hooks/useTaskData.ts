@@ -150,6 +150,23 @@ export function useTaskData() {
     });
   }, [updateData]);
 
+  const moveTaskToTop = useCallback((task: Task) => {
+    updateData((prev) => {
+      const list = orderedTasks(prev, task.status);
+      if (list.length === 0) {
+        return prev;
+      }
+      const minOrder = Math.min(...list.map((t) => t.order || 0));
+      const newOrder = minOrder - 1;
+      return {
+        ...prev,
+        tasks: prev.tasks.map((t) =>
+          t.id === task.id ? { ...t, order: newOrder } : t
+        ),
+      };
+    });
+  }, [updateData]);
+
   const cycleTheme = useCallback(() => {
     updateData((prev) => ({
       ...prev,
@@ -177,6 +194,7 @@ export function useTaskData() {
     deleteTask,
     toggleTaskStatus,
     moveTask,
+    moveTaskToTop,
     cycleTheme,
     updateSettings,
   };

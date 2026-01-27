@@ -30,6 +30,7 @@ export default function App() {
     deleteTask,
     toggleTaskStatus,
     moveTask,
+    moveTaskToTop,
     cycleTheme,
     updateSettings,
   } = useTaskData();
@@ -160,6 +161,7 @@ export default function App() {
               <TaskRow
                 task={item}
                 theme={theme}
+                onMoveTop={() => moveTaskToTop(item)}
                 onMoveUp={() => moveTask(item, -1)}
                 onMoveDown={() => moveTask(item, 1)}
                 onToggle={() => toggleTaskStatus(item)}
