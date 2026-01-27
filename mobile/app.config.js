@@ -2,15 +2,18 @@ const baseConfig = require('./app.json');
 
 const appVariant = process.env.APP_VARIANT || 'production';
 const isTesting = appVariant !== 'production';
-const versionSuffix = process.env.APP_VERSION_SUFFIX
-  ? process.env.APP_VERSION_SUFFIX.slice(0, 7)
-  : '';
+const commitFromEnv = process.env.APP_VERSION_SUFFIX
+  || process.env.EAS_BUILD_GIT_COMMIT_HASH
+  || process.env.GITHUB_SHA
+  || '';
+const versionSuffix = commitFromEnv ? commitFromEnv.slice(0, 7) : '';
 
 const baseVersion = baseConfig.expo.version;
 const version = isTesting && versionSuffix
   ? `${baseVersion}-${versionSuffix}`
   : baseVersion;
 const runtimeVersion = baseVersion;
+const commitHash = versionSuffix;
 
 const name = isTesting ? 'Daily Tasks (Test)' : baseConfig.expo.name;
 const slug = baseConfig.expo.slug;
@@ -47,7 +50,7 @@ module.exports = {
       defaultRemotePath,
       storagePrefix,
       appVersionSuffix: versionSuffix,
-      commitHash: versionSuffix,
+      commitHash,
     },
   },
 };
