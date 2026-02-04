@@ -1,5 +1,6 @@
 import { StatusBar } from 'expo-status-bar';
-import React, { useMemo, useState } from 'react';
+import * as Updates from 'expo-updates';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   FlatList,
@@ -15,7 +16,10 @@ import { useTaskData } from './src/hooks/useTaskData';
 import { orderedTasks } from './src/services/data';
 import { getTheme, isLightColor } from './src/theme/themes';
 import type { Task, Settings } from './src/types';
-import { appVariant, appVersionSuffix } from './src/config/env';
+import { appVariant, appVersionSuffix, appVersion, commitHash } from './src/config/env';
+
+const updateId = Updates.updateId ? Updates.updateId.slice(0, 7) : 'bundled';
+const updateChannel = Updates.channel ?? 'local';
 
 export default function App() {
   const {
@@ -29,6 +33,7 @@ export default function App() {
     deleteTask,
     toggleTaskStatus,
     moveTask,
+    moveTaskToTop,
     cycleTheme,
     updateSettings,
   } = useTaskData();
@@ -38,10 +43,30 @@ export default function App() {
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [pendingSettings, setPendingSettings] = useState<Settings>(settings);
+  const [updateReady, setUpdateReady] = useState(false);
 
   const theme = useMemo(() => getTheme(data.theme_index), [data.theme_index]);
   const list = orderedTasks(data, activeStatus);
   const statusBarStyle = isLightColor(theme.bg) ? 'dark' : 'light';
+
+  useEffect(() => {
+    const checkUpdates = async () => {
+      try {
+        if (!Updates.isEnabled) {
+          return;
+        }
+        const update = await Updates.checkForUpdateAsync();
+        if (update.isAvailable) {
+          await Updates.fetchUpdateAsync();
+          setUpdateReady(true);
+        }
+      } catch {
+        // Ignore update errors
+      }
+    };
+
+    checkUpdates();
+  }, []);
 
   const openAdd = () => {
     setEditingTask(null);
@@ -139,6 +164,7 @@ export default function App() {
               <TaskRow
                 task={item}
                 theme={theme}
+                onMoveTop={() => moveTaskToTop(item)}
                 onMoveUp={() => moveTask(item, -1)}
                 onMoveDown={() => moveTask(item, 1)}
                 onToggle={() => toggleTaskStatus(item)}
@@ -163,9 +189,27 @@ export default function App() {
         </View>
 
         {statusMsg ? <Text style={[styles.status, { color: theme.muted }]}>{statusMsg}</Text> : null}
-      {appVariant !== 'production' ? (
-        <Text style={[styles.status, { color: theme.muted }]}>Test build {appVersionSuffix ? `(${appVersionSuffix.slice(0, 7)})` : ''}</Text>
-      ) : null}
+        <Text style={[styles.status, { color: theme.muted }]}>
+          Version {appVersion}{appVariant !== 'production' && appVersionSuffix ? `-${appVersionSuffix.slice(0, 7)}` : ''}
+        </Text>
+        {commitHash ? (
+          <Text style={[styles.status, { color: theme.muted }]}>Commit {commitHash.slice(0, 7)}</Text>
+        ) : null}
+        <Text style={[styles.status, { color: theme.muted }]}>Update {updateId} · {updateChannel}</Text>
+        {appVariant !== 'production' ? (
+          <Text style={[styles.status, { color: theme.muted }]}>Test build</Text>
+        ) : null}
+        {updateReady ? (
+          <View style={styles.updateBanner}>
+            <Text style={[styles.status, { color: theme.muted }]}>Update available</Text>
+            <Pressable
+              onPress={() => Updates.reloadAsync()}
+              style={[styles.smallButton, { borderColor: theme.border }]}
+            >
+              <Text style={{ color: theme.text }}>Restart</Text>
+            </Pressable>
+          </View>
+        ) : null}
 
         {/* Modals */}
         <TaskEditor
@@ -270,6 +314,13 @@ const styles = StyleSheet.create({
   },
   status: {
     textAlign: 'center',
+    paddingBottom: 12,
+  },
+  updateBanner: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
     paddingBottom: 12,
   },
 });

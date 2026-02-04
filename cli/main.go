@@ -461,13 +461,16 @@ func (m model) renderFooter() string {
 	helpLine := lipgloss.NewStyle().
 		Foreground(lipgloss.Color(theme.Muted)).
 		Render(help)
+	pathLine := lipgloss.NewStyle().
+		Foreground(lipgloss.Color(theme.Muted)).
+		Render(fmt.Sprintf("data: %s", m.dataPath))
 	if m.statusMsg == "" {
-		return lipgloss.NewStyle().PaddingTop(1).Render(helpLine)
+		return lipgloss.NewStyle().PaddingTop(1).Render(helpLine + "\n" + pathLine)
 	}
 	statusLine := lipgloss.NewStyle().
 		Foreground(lipgloss.Color(theme.Accent)).
 		Render(m.statusMsg)
-	return lipgloss.NewStyle().PaddingTop(1).Render(helpLine + "\n" + statusLine)
+	return lipgloss.NewStyle().PaddingTop(1).Render(helpLine + "\n" + statusLine + "\n" + pathLine)
 }
 
 func (m model) renderModal() string {
