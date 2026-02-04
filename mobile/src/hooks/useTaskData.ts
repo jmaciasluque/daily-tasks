@@ -26,7 +26,7 @@ export function useTaskData() {
         setStatusMsg('Testing build: syncing with .daily-tasks-test.json');
       }
     })();
-  }, []);
+  }, [appVariant]);
 
   // Save data to cache whenever it changes
   useEffect(() => {
@@ -150,6 +150,34 @@ export function useTaskData() {
     });
   }, [updateData]);
 
+  const moveTaskToTop = useCallback((task: Task) => {
+    updateData((prev) => {
+      const list = orderedTasks(prev, task.status);
+      if (list.length === 0) {
+        return prev;
+      }
+
+      const orderedIds = [
+        task.id,
+        ...list.filter((t) => t.id !== task.id).map((t) => t.id),
+      ];
+
+      return {
+        ...prev,
+        tasks: prev.tasks.map((t) => {
+          if (t.status !== task.status) {
+            return t;
+          }
+          const idx = orderedIds.indexOf(t.id);
+          if (idx === -1) {
+            return t;
+          }
+          return { ...t, order: idx + 1 };
+        }),
+      };
+    });
+  }, [updateData]);
+
   const cycleTheme = useCallback(() => {
     updateData((prev) => ({
       ...prev,
@@ -177,6 +205,7 @@ export function useTaskData() {
     deleteTask,
     toggleTaskStatus,
     moveTask,
+    moveTaskToTop,
     cycleTheme,
     updateSettings,
   };
