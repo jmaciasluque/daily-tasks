@@ -2,7 +2,7 @@ name: EAS Build (APK)
 
 on:
   push:
-    branches: ['**']
+    branches: ['main']
     tags: ['v*']  # Trigger on version tags like v1.0.0, v1.0.1, etc.
   workflow_dispatch:  # Allow manual trigger
 
@@ -32,26 +32,9 @@ jobs:
         working-directory: ./mobile
         run: npm ci
 
-      - name: Set build environment
-        run: |
-          if [ "${{ github.ref_name }}" = "main" ]; then
-            echo "APP_VARIANT=production" >> $GITHUB_ENV
-            echo "APP_VERSION_SUFFIX=" >> $GITHUB_ENV
-          else
-            echo "APP_VARIANT=testing" >> $GITHUB_ENV
-            echo "APP_VERSION_SUFFIX=${GITHUB_SHA}" >> $GITHUB_ENV
-          fi
-
       - name: Build Android APK
         working-directory: ./mobile
-        run: |
-          if [ "${{ github.ref_name }}" = "main" ]; then
-            APP_VARIANT=production APP_VERSION_SUFFIX=${APP_VERSION_SUFFIX} \
-              eas build --platform android --profile preview --non-interactive
-          else
-            APP_VARIANT=testing APP_VERSION_SUFFIX=${APP_VERSION_SUFFIX} \
-              eas build --platform android --profile testing --non-interactive --no-wait
-          fi
+        run: APP_VARIANT=production eas build --platform android --profile preview --non-interactive
 
       - name: Build Android App Bundle (Play Store)
         if: github.ref_name == 'main'
