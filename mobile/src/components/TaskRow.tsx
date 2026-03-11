@@ -6,6 +6,7 @@ import type { Theme } from '../theme/themes';
 type Props = {
   task: Task;
   theme: Theme;
+  onMoveTop: () => void;
   onMoveUp: () => void;
   onMoveDown: () => void;
   onToggle: () => void;
@@ -13,7 +14,7 @@ type Props = {
   onDelete: () => void;
 };
 
-export function TaskRow({ task, theme, onMoveUp, onMoveDown, onToggle, onEdit, onDelete }: Props) {
+export function TaskRow({ task, theme, onMoveTop, onMoveUp, onMoveDown, onToggle, onEdit, onDelete }: Props) {
   return (
     <View style={[styles.row, { borderBottomColor: theme.border }]}>
       <View style={styles.rowText}>
@@ -21,6 +22,9 @@ export function TaskRow({ task, theme, onMoveUp, onMoveDown, onToggle, onEdit, o
         <Text style={[styles.rowMeta, { color: theme.muted }]}>{task.duration}m</Text>
       </View>
       <View style={styles.rowActions}>
+        <Pressable onPress={onMoveTop} style={[styles.iconButton, { borderColor: theme.border }]}>
+          <Text style={{ color: theme.text }}>Top</Text>
+        </Pressable>
         <Pressable onPress={onMoveUp} style={[styles.iconButton, { borderColor: theme.border }]}>
           <Text style={{ color: theme.text }}>↑</Text>
         </Pressable>
