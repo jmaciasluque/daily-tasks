@@ -22,7 +22,7 @@ This file mirrors GitHub issues for agent-friendly scanning. Use issues for disc
 ## Clients
 ### CLI
 - [ ] #16 CLI first-run configuration TUI gating (labels: cli, ui, configuration)
-- [ ] #17 Add non-TUI CLI commands (labels: cli, ui)
+- [x] #17 Add non-TUI CLI commands (labels: cli, ui)
 - [ ] #18 CLI: AM/PM grouping + deadline indicator (labels: cli, ui)
 
 ### Mobile
@@ -36,3 +36,10 @@ This file mirrors GitHub issues for agent-friendly scanning. Use issues for disc
 ## Docs & tests
 - [ ] #23 Update schema/docs + migrations guide (labels: documentation, backend, configuration)
 - [ ] #24 Add tests for visibility/deadline/history/reset (labels: testing, backend)
+
+## Consistency & hardening
+- [ ] #26 Align last_modified units across clients + schema (labels: documentation, backend, ddl)
+- [ ] #27 Standardize last_reset date handling (local vs UTC) (labels: documentation, backend, dml, testing)
+- [ ] #28 Unify sync action semantics between CLI and mobile (labels: backend, cli, mobile)
+- [ ] #29 Harden CLI WebDAV not-found handling (labels: backend, cli, testing)
+- [ ] #30 Add missing mobile tests for WebDAV/storage/hooks (labels: backend, mobile, testing)
