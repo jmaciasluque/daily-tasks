@@ -2,7 +2,7 @@ name: EAS Update (OTA)
 
 on:
   push:
-    branches: ['**']
+    branches: ['main']
     paths:
       - 'mobile/**'
       - '!mobile/app.json'  # app.json changes need full rebuild
@@ -34,15 +34,4 @@ jobs:
 
       - name: Publish update
         working-directory: ./mobile
-        run: |
-          if [ "${{ github.ref_name }}" = "main" ]; then
-            BRANCH=production
-            APP_VARIANT=production
-            APP_VERSION_SUFFIX=
-          else
-            BRANCH=testing
-            APP_VARIANT=testing
-            APP_VERSION_SUFFIX=${GITHUB_SHA}
-          fi
-          APP_VARIANT=$APP_VARIANT APP_VERSION_SUFFIX=$APP_VERSION_SUFFIX \
-            eas update --branch "$BRANCH" --message "${{ github.event.head_commit.message }}"
+        run: APP_VARIANT=production eas update --branch production --message "${{ github.event.head_commit.message }}"
