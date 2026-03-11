@@ -47,6 +47,22 @@ export DAILY_TASKS_PATH="$HOME/.config/daily-tasks/data.json"
 | `tab` | Switch column |
 | `q` | Quit |
 
+## Non-TUI Commands
+
+You can run the CLI without the TUI using subcommands:
+
+```bash
+daily-tasks list
+daily-tasks list --status todo
+daily-tasks add --title "Write report" --duration 45
+daily-tasks add --title "Standup" --duration 15 --status done
+daily-tasks done 3
+daily-tasks todo 3
+daily-tasks delete 3
+daily-tasks sync
+daily-tasks push
+```
+
 ## WebDAV Sync
 
 To sync with Nextcloud via WebDAV, set these environment variables:
