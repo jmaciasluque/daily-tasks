@@ -18,15 +18,38 @@ type WebDAVSettings struct {
 	Pass string
 }
 
-// LoadWebDAVSettings loads WebDAV configuration from environment variables
+// LoadWebDAVSettings loads WebDAV configuration.
+//
+// Priority:
+//  1. If ANY env var is set, ALL three must be present; error if any are missing.
+//  2. No env vars → try the config file (~/.config/daily-tasks/config.json).
+//  3. Neither configured → return an error.
 func LoadWebDAVSettings() (WebDAVSettings, error) {
 	url := strings.TrimSpace(os.Getenv("DAILY_TASKS_WEBDAV_URL"))
 	user := os.Getenv("DAILY_TASKS_WEBDAV_USER")
 	pass := os.Getenv("DAILY_TASKS_WEBDAV_PASS")
-	if url == "" || user == "" || pass == "" {
-		return WebDAVSettings{}, errors.New("set DAILY_TASKS_WEBDAV_URL, DAILY_TASKS_WEBDAV_USER, DAILY_TASKS_WEBDAV_PASS")
+
+	anyEnv := url != "" || user != "" || pass != ""
+	if anyEnv {
+		if url == "" || user == "" || pass == "" {
+			return WebDAVSettings{}, errors.New("partial env config: set all of DAILY_TASKS_WEBDAV_URL, DAILY_TASKS_WEBDAV_USER, DAILY_TASKS_WEBDAV_PASS")
+		}
+		return WebDAVSettings{URL: url, User: user, Pass: pass}, nil
 	}
-	return WebDAVSettings{URL: url, User: user, Pass: pass}, nil
+
+	// Fall back to config file.
+	cfgPath, err := DefaultConfigPath()
+	if err != nil {
+		return WebDAVSettings{}, errors.New("WebDAV not configured: set env vars or run 'daily-tasks config'")
+	}
+	cfg, err := LoadConfig(cfgPath)
+	if err != nil {
+		return WebDAVSettings{}, fmt.Errorf("reading config file: %w", err)
+	}
+	if cfg.IsEmpty() {
+		return WebDAVSettings{}, errors.New("WebDAV not configured: run 'daily-tasks config' or set env vars")
+	}
+	return WebDAVSettings{URL: cfg.WebDAVURL, User: cfg.WebDAVUser, Pass: cfg.WebDAVPass}, nil
 }
 
 // FetchRemoteData fetches the data from the remote WebDAV server
