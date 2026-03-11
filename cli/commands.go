@@ -41,6 +41,8 @@ func runNonTUI(args []string) (bool, error) {
 		return true, runSync(cmdArgs)
 	case "push":
 		return true, runPush(cmdArgs)
+	case "config":
+		return true, runConfig(cmdArgs)
 	default:
 		return true, fmt.Errorf("unknown command: %s", cmd)
 	}
@@ -57,6 +59,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  delete, del, rm  Delete a task")
 	fmt.Fprintln(w, "  sync             Sync with Nextcloud")
 	fmt.Fprintln(w, "  push             Force push local data")
+	fmt.Fprintln(w, "  config           Show or set WebDAV credentials")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Run with --help after a command to see command options.")
 }
@@ -358,6 +361,84 @@ func printTaskGroup(label string, tasks []*internal.Task) {
 		}
 		fmt.Printf("%s #%d %s (%dm)\n", status, task.ID, task.Title, task.Duration)
 	}
+}
+
+func printConfigUsage(w io.Writer) {
+	fmt.Fprintln(w, "Usage: daily-tasks config [--url URL --user USER --pass PASS]")
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "Without flags: show current config source.")
+	fmt.Fprintln(w, "With all three flags: save credentials to ~/.config/daily-tasks/config.json")
+}
+
+func runConfig(args []string) error {
+	if wantsHelp(args) {
+		printConfigUsage(os.Stdout)
+		return nil
+	}
+	fs := flag.NewFlagSet("config", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	urlFlag := fs.String("url", "", "WebDAV URL")
+	userFlag := fs.String("user", "", "WebDAV username")
+	passFlag := fs.String("pass", "", "WebDAV password")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	// Determine if user wants to set or show
+	anySet := *urlFlag != "" || *userFlag != "" || *passFlag != ""
+	if anySet {
+		if *urlFlag == "" || *userFlag == "" || *passFlag == "" {
+			return errors.New("all three flags (--url, --user, --pass) are required")
+		}
+		cfgPath, err := internal.DefaultConfigPath()
+		if err != nil {
+			return err
+		}
+		cfg := internal.Config{
+			WebDAVURL:  *urlFlag,
+			WebDAVUser: *userFlag,
+			WebDAVPass: *passFlag,
+		}
+		if err := internal.SaveConfig(cfgPath, cfg); err != nil {
+			return err
+		}
+		fmt.Printf("Credentials saved to %s\n", cfgPath)
+		return nil
+	}
+
+	// Show current config source
+	urlEnv := strings.TrimSpace(os.Getenv("DAILY_TASKS_WEBDAV_URL"))
+	userEnv := os.Getenv("DAILY_TASKS_WEBDAV_USER")
+	passEnv := os.Getenv("DAILY_TASKS_WEBDAV_PASS")
+	if urlEnv != "" || userEnv != "" || passEnv != "" {
+		if urlEnv != "" && userEnv != "" && passEnv != "" {
+			fmt.Println("Credentials loaded from environment variables.")
+			fmt.Printf("  URL:  %s\n", urlEnv)
+			fmt.Printf("  User: %s\n", userEnv)
+		} else {
+			fmt.Println("Partial environment variables set — all three are required:")
+			fmt.Println("  DAILY_TASKS_WEBDAV_URL, DAILY_TASKS_WEBDAV_USER, DAILY_TASKS_WEBDAV_PASS")
+		}
+		return nil
+	}
+
+	cfgPath, err := internal.DefaultConfigPath()
+	if err != nil {
+		return err
+	}
+	cfg, err := internal.LoadConfig(cfgPath)
+	if err != nil {
+		return fmt.Errorf("reading config file: %w", err)
+	}
+	if cfg.IsEmpty() {
+		fmt.Println("No WebDAV credentials configured.")
+		fmt.Println("Use: daily-tasks config --url URL --user USER --pass PASS")
+		return nil
+	}
+	fmt.Printf("Credentials loaded from %s\n", cfgPath)
+	fmt.Printf("  URL:  %s\n", cfg.WebDAVURL)
+	fmt.Printf("  User: %s\n", cfg.WebDAVUser)
+	return nil
 }
 
 func wantsHelp(args []string) bool {

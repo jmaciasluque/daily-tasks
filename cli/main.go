@@ -22,6 +22,7 @@ const (
 	modeAdd
 	modeEdit
 	modeDeleteConfirm
+	modeSetup
 )
 
 type taskItem struct {
@@ -59,6 +60,11 @@ type model struct {
 	statusMsg   string
 	lastChecked string
 	history     []internal.Data
+	// setup screen
+	setupInputs  [3]textinput.Model
+	setupFocused int
+	setupIsEdit  bool
+	configPath   string
 }
 
 func main() {
@@ -83,14 +89,26 @@ func main() {
 		os.Exit(1)
 	}
 
-	m := newModel(data, dataPath)
+	cfgPath, err := internal.DefaultConfigPath()
+	if err != nil {
+		fmt.Println("Error finding config path:", err)
+		os.Exit(1)
+	}
+
+	m := newModel(data, dataPath, cfgPath)
+	if !internal.HasWebDAVConfig() {
+		m.mode = modeSetup
+		m.setupIsEdit = false
+		m.initSetupInputs("", "", "")
+	}
+
 	if _, err := tea.NewProgram(m, tea.WithAltScreen()).Run(); err != nil {
 		fmt.Println("Error:", err)
 		os.Exit(1)
 	}
 }
 
-func newModel(data internal.Data, path string) model {
+func newModel(data internal.Data, path string, cfgPath string) model {
 	todoList := list.New([]list.Item{}, list.NewDefaultDelegate(), 0, 0)
 	doneList := list.New([]list.Item{}, list.NewDefaultDelegate(), 0, 0)
 
@@ -114,6 +132,7 @@ func newModel(data internal.Data, path string) model {
 	m := model{
 		data:       data,
 		dataPath:   path,
+		configPath: cfgPath,
 		lists:      [2]list.Model{todoList, doneList},
 		focused:    0,
 		mode:       modeNormal,
@@ -127,6 +146,29 @@ func newModel(data internal.Data, path string) model {
 	m.resizeLists()
 	m.syncLists()
 	return m
+}
+
+func (m *model) initSetupInputs(url, user, pass string) {
+	urlInput := textinput.New()
+	urlInput.Placeholder = "https://nextcloud.example.com/remote.php/dav/files/user/tasks.json"
+	urlInput.CharLimit = 512
+	urlInput.SetValue(url)
+
+	userInput := textinput.New()
+	userInput.Placeholder = "username"
+	userInput.CharLimit = 128
+	userInput.SetValue(user)
+
+	passInput := textinput.New()
+	passInput.Placeholder = "password"
+	passInput.EchoMode = textinput.EchoPassword
+	passInput.EchoCharacter = '•'
+	passInput.CharLimit = 256
+	passInput.SetValue(pass)
+
+	m.setupInputs = [3]textinput.Model{urlInput, userInput, passInput}
+	m.setupFocused = 0
+	m.setupInputs[0].Focus()
 }
 
 func (m model) Init() tea.Cmd {
@@ -176,6 +218,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateEdit(msg)
 		case modeDeleteConfirm:
 			return m.updateDeleteConfirm(msg)
+		case modeSetup:
+			return m.updateSetup(msg)
 		}
 	}
 
@@ -299,6 +343,12 @@ func (m model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			_ = internal.SaveData(m.dataPath, m.data)
 		}
 		return m, nil
+	case "c":
+		cfg, _ := internal.LoadConfig(m.configPath)
+		m.mode = modeSetup
+		m.setupIsEdit = true
+		m.initSetupInputs(cfg.WebDAVURL, cfg.WebDAVUser, cfg.WebDAVPass)
+		return m, nil
 	}
 
 	var cmd tea.Cmd
@@ -371,6 +421,59 @@ func (m model) updateEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+func (m model) updateSetup(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		if m.setupIsEdit {
+			m.mode = modeNormal
+		}
+		return m, nil
+	case "s":
+		if !m.setupIsEdit {
+			// Skip: local-only mode
+			m.mode = modeNormal
+		}
+		return m, nil
+	case "tab", "shift+tab":
+		m.setupInputs[m.setupFocused].Blur()
+		if msg.String() == "tab" {
+			m.setupFocused = (m.setupFocused + 1) % 3
+		} else {
+			m.setupFocused = (m.setupFocused + 2) % 3
+		}
+		m.setupInputs[m.setupFocused].Focus()
+		return m, nil
+	case "enter":
+		if m.setupFocused < 2 {
+			m.setupInputs[m.setupFocused].Blur()
+			m.setupFocused++
+			m.setupInputs[m.setupFocused].Focus()
+			return m, nil
+		}
+		// Last field — validate and save
+		url := strings.TrimSpace(m.setupInputs[0].Value())
+		user := strings.TrimSpace(m.setupInputs[1].Value())
+		pass := m.setupInputs[2].Value()
+		if url == "" || user == "" || pass == "" {
+			m.errMsg = "All fields are required"
+			return m, nil
+		}
+		cfg := internal.Config{WebDAVURL: url, WebDAVUser: user, WebDAVPass: pass}
+		if err := internal.SaveConfig(m.configPath, cfg); err != nil {
+			m.errMsg = fmt.Sprintf("Save failed: %s", err)
+			return m, nil
+		}
+		m.errMsg = ""
+		m.statusMsg = "Config saved."
+		m.mode = modeNormal
+		return m, nil
+	}
+
+	var cmd tea.Cmd
+	m.setupInputs[m.setupFocused], cmd = m.setupInputs[m.setupFocused].Update(msg)
+	return m, cmd
+}
+
 func (m model) updateDeleteConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "y", "Y":
@@ -389,6 +492,10 @@ func (m model) updateDeleteConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) View() string {
+	if m.mode == modeSetup {
+		return m.renderSetupScreen()
+	}
+
 	theme := m.currentTheme()
 	header := lipgloss.NewStyle().
 		Bold(true).
@@ -466,7 +573,7 @@ func (m model) renderFooter() string {
 		return ""
 	}
 	theme := m.currentTheme()
-	help := fmt.Sprintf("a:add  e:edit  d:delete  space:move  J/K:reorder  r:sync  p:push  t:theme (%s)  tab:switch  q:quit", theme.Name)
+	help := fmt.Sprintf("a:add  e:edit  d:delete  space:move  J/K:reorder  r:sync  p:push  t:theme (%s)  c:config  tab:switch  q:quit", theme.Name)
 	helpLine := lipgloss.NewStyle().
 		Foreground(lipgloss.Color(theme.Muted)).
 		Render(help)
@@ -500,6 +607,54 @@ func (m model) renderModal() string {
 		return modalStyle.Render("Delete this task? (y/n)")
 	}
 	return ""
+}
+
+func (m model) renderSetupScreen() string {
+	theme := m.currentTheme()
+	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(theme.Text))
+	labelStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Muted))
+	errStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Accent))
+
+	var hint string
+	if m.setupIsEdit {
+		hint = "enter:save  tab:next  esc:cancel"
+	} else {
+		hint = "enter:save  tab:next  s:skip (local-only)"
+	}
+
+	lines := []string{
+		titleStyle.Render("WebDAV Configuration"),
+		"",
+		labelStyle.Render("URL:"),
+		m.setupInputs[0].View(),
+		"",
+		labelStyle.Render("Username:"),
+		m.setupInputs[1].View(),
+		"",
+		labelStyle.Render("Password:"),
+		m.setupInputs[2].View(),
+		"",
+		labelStyle.Render(hint),
+	}
+	if m.errMsg != "" {
+		lines = append(lines, "", errStyle.Render(m.errMsg))
+	}
+
+	boxStyle := lipgloss.NewStyle().
+		Border(lipgloss.DoubleBorder()).
+		BorderForeground(lipgloss.Color(theme.FocusBorder)).
+		Background(lipgloss.Color(theme.PanelBg)).
+		Padding(1, 2).
+		Width(70)
+
+	content := boxStyle.Render(strings.Join(lines, "\n"))
+	return lipgloss.Place(
+		m.width, m.height,
+		lipgloss.Center, lipgloss.Center,
+		content,
+		lipgloss.WithWhitespaceBackground(lipgloss.Color(theme.Bg)),
+		lipgloss.WithWhitespaceForeground(lipgloss.Color(theme.Bg)),
+	)
 }
 
 func (m model) editView(title string) string {
