@@ -62,6 +62,15 @@ type model struct {
 }
 
 func main() {
+	if handled, err := runNonTUI(os.Args[1:]); handled {
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			printUsage(os.Stderr)
+			os.Exit(1)
+		}
+		return
+	}
+
 	dataPath, err := internal.DefaultDataPath()
 	if err != nil {
 		fmt.Println("Error finding data path:", err)
