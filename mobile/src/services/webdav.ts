@@ -81,6 +81,11 @@ export async function syncWithRemote(settings: Settings, localData: Data): Promi
     const remote = normalizeData(remoteRaw);
     const local = normalizeData(localData);
 
+    // Never overwrite remote tasks with an empty local state (e.g. fresh install or daily reset with no tasks)
+    if (local.tasks.length === 0 && remote.tasks.length > 0) {
+      return { data: remote, action: 'pulled', message: 'Pulled remote data' };
+    }
+
     const localTimestamp = local.last_modified || 0;
     const remoteTimestamp = remote.last_modified || 0;
 
