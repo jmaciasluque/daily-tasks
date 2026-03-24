@@ -1,4 +1,4 @@
-import type { Data, Task } from '../types';
+import type { Data, Task, TaskStatus } from '../types';
 import { THEMES } from '../theme/themes';
 
 export function todayString(): string {
@@ -33,10 +33,13 @@ export function normalizeData(input: Data): Data {
 export function assignMissingOrders(data: Data): void {
   let maxTodo = 0;
   let maxDone = 0;
+  let maxSkipped = 0;
   data.tasks.forEach((task) => {
     if (task.order && task.order > 0) {
       if (task.status === 'done') {
         maxDone = Math.max(maxDone, task.order);
+      } else if (task.status === 'skipped') {
+        maxSkipped = Math.max(maxSkipped, task.order);
       } else {
         maxTodo = Math.max(maxTodo, task.order);
       }
@@ -47,6 +50,9 @@ export function assignMissingOrders(data: Data): void {
       if (task.status === 'done') {
         maxDone += 1;
         task.order = maxDone;
+      } else if (task.status === 'skipped') {
+        maxSkipped += 1;
+        task.order = maxSkipped;
       } else {
         maxTodo += 1;
         task.order = maxTodo;
@@ -55,7 +61,7 @@ export function assignMissingOrders(data: Data): void {
   });
 }
 
-export function orderedTasks(data: Data, status: 'todo' | 'done'): Task[] {
+export function orderedTasks(data: Data, status: TaskStatus): Task[] {
   return data.tasks
     .filter((task) => task.status === status)
     .sort((a, b) => (a.order === b.order ? a.id - b.id : a.order - b.order));
@@ -66,20 +72,25 @@ export function resetIfNeeded(data: Data): Data {
   if (data.last_reset === today) {
     return data;
   }
-  const merged = [...orderedTasks(data, 'todo'), ...orderedTasks(data, 'done')];
+  // Reset todo, done, and skipped — all go back to todo
+  const merged = [
+    ...orderedTasks(data, 'todo'),
+    ...orderedTasks(data, 'done'),
+    ...orderedTasks(data, 'skipped'),
+  ];
   merged.forEach((task, idx) => {
     task.status = 'todo';
     task.order = idx + 1;
   });
-  return { 
-    ...data, 
-    last_reset: today, 
+  return {
+    ...data,
+    last_reset: today,
     tasks: merged,
     last_modified: Date.now(),
   };
 }
 
-export function nextOrder(data: Data, status: 'todo' | 'done'): number {
+export function nextOrder(data: Data, status: TaskStatus): number {
   let max = 0;
   data.tasks.forEach((task) => {
     if (task.status === status) {

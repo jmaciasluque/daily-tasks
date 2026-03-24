@@ -1,9 +1,12 @@
+export type TaskStatus = 'todo' | 'done' | 'skipped';
+
 export type Task = {
   id: number;
   title: string;
   duration: number;
-  status: 'todo' | 'done';
+  status: TaskStatus;
   order: number;
+  deadline?: string; // HH:MM format, optional
 };
 
 export type Data = {
