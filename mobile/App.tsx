@@ -1,8 +1,10 @@
 import { StatusBar } from 'expo-status-bar';
 import * as Updates from 'expo-updates';
-import React, { useEffect, useMemo, useState } from 'react';
+import * as Notifications from 'expo-notifications';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
+  AppState,
   FlatList,
   Pressable,
   StyleSheet,
@@ -14,8 +16,9 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { TaskRow, TaskEditor, SettingsModal } from './src/components';
 import { useTaskData } from './src/hooks/useTaskData';
 import { orderedTasks } from './src/services/data';
+import { setupNotifications, handleNotificationAction } from './src/services/notifications';
 import { getTheme, isLightColor } from './src/theme/themes';
-import type { Task, Settings } from './src/types';
+import type { Task, TaskStatus, Settings } from './src/types';
 import { appVariant, appVersionSuffix, appVersion, commitHash } from './src/config/env';
 
 const updateId = Updates.updateId ? Updates.updateId.slice(0, 7) : 'bundled';
@@ -28,17 +31,19 @@ export default function App() {
     statusMsg,
     syncing,
     syncFromRemote,
+    reloadFromCache,
     addTask,
     editTask,
     deleteTask,
     toggleTaskStatus,
+    skipTask,
     moveTask,
     moveTaskToTop,
     cycleTheme,
     updateSettings,
   } = useTaskData();
 
-  const [activeStatus, setActiveStatus] = useState<'todo' | 'done'>('todo');
+  const [activeStatus, setActiveStatus] = useState<TaskStatus>('todo');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
@@ -48,6 +53,34 @@ export default function App() {
   const theme = useMemo(() => getTheme(data.theme_index), [data.theme_index]);
   const list = orderedTasks(data, activeStatus);
   const statusBarStyle = isLightColor(theme.bg) ? 'dark' : 'light';
+
+  // Request notification permissions and set up action handlers
+  useEffect(() => {
+    setupNotifications();
+
+    // Handle notification actions (Skip / Mark Done) — fired when user interacts
+    // with a notification, whether the app is in foreground or background
+    const responseSub = Notifications.addNotificationResponseReceivedListener(async (response) => {
+      const changed = await handleNotificationAction(response);
+      if (changed) {
+        // Reload React state from storage after the background update
+        await reloadFromCache();
+      }
+    });
+
+    // When app returns to foreground, reload in case a notification action
+    // ran while the app was backgrounded
+    const appStateSub = AppState.addEventListener('change', async (nextState) => {
+      if (nextState === 'active') {
+        await reloadFromCache();
+      }
+    });
+
+    return () => {
+      responseSub.remove();
+      appStateSub.remove();
+    };
+  }, [reloadFromCache]);
 
   useEffect(() => {
     const checkUpdates = async () => {
@@ -78,11 +111,11 @@ export default function App() {
     setIsEditorOpen(true);
   };
 
-  const handleSaveTask = (title: string, duration: number) => {
+  const handleSaveTask = (title: string, duration: number, deadline?: string) => {
     if (editingTask) {
-      editTask(editingTask.id, title, duration);
+      editTask(editingTask.id, title, duration, deadline);
     } else {
-      addTask(title, duration);
+      addTask(title, duration, deadline);
     }
     setIsEditorOpen(false);
   };
@@ -109,11 +142,15 @@ export default function App() {
     syncFromRemote();
   };
 
+  const todoCount = data.tasks.filter(t => t.status === 'todo').length;
+  const doneCount = data.tasks.filter(t => t.status === 'done').length;
+  const skippedCount = data.tasks.filter(t => t.status === 'skipped').length;
+
   return (
     <SafeAreaProvider>
       <SafeAreaView style={[styles.root, { backgroundColor: theme.bg }]} edges={['top', 'bottom']}>
         <StatusBar style={statusBarStyle} />
-        
+
         {/* Header */}
         <View style={[styles.header, { borderBottomColor: theme.border }]}>
           <View>
@@ -141,7 +178,7 @@ export default function App() {
               { backgroundColor: activeStatus === 'todo' ? theme.focusBg : theme.panelBg, borderColor: theme.border },
             ]}
           >
-            <Text style={{ color: theme.text, fontWeight: '600' }}>To Do</Text>
+            <Text style={{ color: theme.text, fontWeight: '600' }}>To Do ({todoCount})</Text>
           </Pressable>
           <Pressable
             onPress={() => setActiveStatus('done')}
@@ -150,7 +187,16 @@ export default function App() {
               { backgroundColor: activeStatus === 'done' ? theme.focusBg : theme.panelBg, borderColor: theme.border },
             ]}
           >
-            <Text style={{ color: theme.text, fontWeight: '600' }}>Done</Text>
+            <Text style={{ color: theme.text, fontWeight: '600' }}>Done ({doneCount})</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => setActiveStatus('skipped')}
+            style={[
+              styles.switchButton,
+              { backgroundColor: activeStatus === 'skipped' ? theme.focusBg : theme.panelBg, borderColor: theme.border },
+            ]}
+          >
+            <Text style={{ color: theme.muted, fontWeight: '600' }}>Skipped ({skippedCount})</Text>
           </Pressable>
         </View>
 
@@ -168,6 +214,7 @@ export default function App() {
                 onMoveUp={() => moveTask(item, -1)}
                 onMoveDown={() => moveTask(item, 1)}
                 onToggle={() => toggleTaskStatus(item)}
+                onSkip={() => skipTask(item.id)}
                 onEdit={() => openEdit(item)}
                 onDelete={() => handleDeleteTask(item)}
               />
@@ -260,7 +307,7 @@ const styles = StyleSheet.create({
   },
   switcher: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 8,
     paddingHorizontal: 18,
     paddingTop: 8,
   },

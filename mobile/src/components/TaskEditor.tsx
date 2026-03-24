@@ -7,21 +7,24 @@ type Props = {
   visible: boolean;
   task: Task | null;
   theme: Theme;
-  onSave: (title: string, duration: number) => void;
+  onSave: (title: string, duration: number, deadline?: string) => void;
   onClose: () => void;
 };
 
 export function TaskEditor({ visible, task, theme, onSave, onClose }: Props) {
   const [title, setTitle] = useState('');
   const [duration, setDuration] = useState('5');
+  const [deadline, setDeadline] = useState('');
 
   useEffect(() => {
     if (task) {
       setTitle(task.title);
       setDuration(String(task.duration));
+      setDeadline(task.deadline ?? '');
     } else {
       setTitle('');
       setDuration('5');
+      setDeadline('');
     }
   }, [task, visible]);
 
@@ -38,7 +41,20 @@ export function TaskEditor({ visible, task, theme, onSave, onClose }: Props) {
       return;
     }
 
-    onSave(trimmedTitle, parsedDuration);
+    const trimmedDeadline = deadline.trim();
+    if (trimmedDeadline) {
+      if (!/^\d{2}:\d{2}$/.test(trimmedDeadline)) {
+        Alert.alert('Validation', 'Deadline must be in HH:MM format (e.g. 09:30).');
+        return;
+      }
+      const [h, m] = trimmedDeadline.split(':').map(Number);
+      if (h < 0 || h > 23 || m < 0 || m > 59) {
+        Alert.alert('Validation', 'Deadline time is out of range.');
+        return;
+      }
+    }
+
+    onSave(trimmedTitle, parsedDuration, trimmedDeadline || undefined);
   };
 
   return (
@@ -63,6 +79,17 @@ export function TaskEditor({ visible, task, theme, onSave, onClose }: Props) {
             keyboardType="number-pad"
             style={[styles.input, { color: theme.text, borderColor: theme.border }]}
           />
+          <TextInput
+            placeholder="Deadline (HH:MM, optional)"
+            placeholderTextColor={theme.muted}
+            value={deadline}
+            onChangeText={setDeadline}
+            keyboardType="numbers-and-punctuation"
+            style={[styles.input, { color: theme.text, borderColor: theme.border }]}
+          />
+          <Text style={[styles.hint, { color: theme.muted }]}>
+            Set a deadline to receive a daily notification reminder.
+          </Text>
           <View style={styles.actions}>
             <Pressable onPress={onClose} style={[styles.secondaryButton, { borderColor: theme.border }]}>
               <Text style={{ color: theme.text }}>Cancel</Text>
@@ -99,6 +126,10 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 10,
+  },
+  hint: {
+    fontSize: 12,
+    marginTop: -4,
   },
   actions: {
     flexDirection: 'row',
