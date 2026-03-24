@@ -228,21 +228,25 @@ func (m model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.deadlineInput.Blur()
 		return m, nil
 	case "r":
-		m.statusMsg = "Syncing from Nextcloud..."
-		return m, syncRemoteCmd(m.data)
+		m.statusMsg = "Syncing..."
+		return m, syncRemoteCmd(m.data, m.dataPath)
 	case "p":
 		m.statusMsg = "Pushing to Nextcloud..."
 		return m, pushRemoteCmd(m.data)
 	case "t":
 		m.data.ThemeIndex = (m.data.ThemeIndex + 1) % internal.ThemeCount()
 		m.applyTheme()
-		_ = internal.SaveData(m.dataPath, m.data)
+		if err := internal.SaveData(m.dataPath, m.data); err != nil {
+			m.statusMsg = fmt.Sprintf("Save error: %s", err)
+		}
 		return m, nil
 	case "u":
 		if m.undo() {
 			m.applyTheme()
 			m.syncLists()
-			_ = internal.SaveData(m.dataPath, m.data)
+			if err := internal.SaveData(m.dataPath, m.data); err != nil {
+				m.statusMsg = fmt.Sprintf("Save error: %s", err)
+			}
 		}
 		return m, nil
 	case "e":
@@ -279,7 +283,9 @@ func (m model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		t.Status = "skipped"
 		t.Order = internal.NextOrder(&m.data, "skipped")
 		m.syncLists()
-		_ = internal.SaveData(m.dataPath, m.data)
+		if err := internal.SaveData(m.dataPath, m.data); err != nil {
+			m.statusMsg = fmt.Sprintf("Save error: %s", err)
+		}
 		return m, nil
 	case "enter", " ":
 		t := m.selectedTask()
@@ -294,14 +300,18 @@ func (m model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		t.Order = internal.NextOrder(&m.data, t.Status)
 		m.syncLists()
-		_ = internal.SaveData(m.dataPath, m.data)
+		if err := internal.SaveData(m.dataPath, m.data); err != nil {
+			m.statusMsg = fmt.Sprintf("Save error: %s", err)
+		}
 		return m, nil
 	case "J":
 		m.pushHistory()
 		if ok, newIdx := m.moveTask(1); ok {
 			m.syncLists()
 			m.lists[m.focused].Select(newIdx)
-			_ = internal.SaveData(m.dataPath, m.data)
+			if err := internal.SaveData(m.dataPath, m.data); err != nil {
+				m.statusMsg = fmt.Sprintf("Save error: %s", err)
+			}
 		}
 		return m, nil
 	case "K":
@@ -309,7 +319,9 @@ func (m model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if ok, newIdx := m.moveTask(-1); ok {
 			m.syncLists()
 			m.lists[m.focused].Select(newIdx)
-			_ = internal.SaveData(m.dataPath, m.data)
+			if err := internal.SaveData(m.dataPath, m.data); err != nil {
+				m.statusMsg = fmt.Sprintf("Save error: %s", err)
+			}
 		}
 		return m, nil
 	case "H":
@@ -318,7 +330,9 @@ func (m model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if ok, _ := m.moveTaskToCol((m.focused + 2) % 3); ok {
 			m.syncLists()
 			m.lists[m.focused].Select(internal.ClampIndex(oldIdx, len(m.lists[m.focused].Items())))
-			_ = internal.SaveData(m.dataPath, m.data)
+			if err := internal.SaveData(m.dataPath, m.data); err != nil {
+				m.statusMsg = fmt.Sprintf("Save error: %s", err)
+			}
 		}
 		return m, nil
 	case "L":
@@ -327,7 +341,9 @@ func (m model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if ok, _ := m.moveTaskToCol((m.focused + 1) % 3); ok {
 			m.syncLists()
 			m.lists[m.focused].Select(internal.ClampIndex(oldIdx, len(m.lists[m.focused].Items())))
-			_ = internal.SaveData(m.dataPath, m.data)
+			if err := internal.SaveData(m.dataPath, m.data); err != nil {
+				m.statusMsg = fmt.Sprintf("Save error: %s", err)
+			}
 		}
 		return m, nil
 	}
@@ -412,7 +428,9 @@ func (m model) updateEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.mode = modeNormal
 		m.errMsg = ""
 		m.syncLists()
-		_ = internal.SaveData(m.dataPath, m.data)
+		if err := internal.SaveData(m.dataPath, m.data); err != nil {
+			m.statusMsg = fmt.Sprintf("Save error: %s", err)
+		}
 		return m, nil
 	}
 
@@ -434,7 +452,9 @@ func (m model) updateDeleteConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.mode = modeNormal
 		m.errMsg = ""
 		m.syncLists()
-		_ = internal.SaveData(m.dataPath, m.data)
+		if err := internal.SaveData(m.dataPath, m.data); err != nil {
+			m.statusMsg = fmt.Sprintf("Save error: %s", err)
+		}
 		return m, nil
 	case "n", "N", "esc":
 		m.mode = modeNormal
@@ -626,7 +646,9 @@ func (m *model) selectedTask() *internal.Task {
 func (m *model) ensureReset() {
 	if internal.ResetIfNewDay(&m.data) {
 		m.syncLists()
-		_ = internal.SaveData(m.dataPath, m.data)
+		if err := internal.SaveData(m.dataPath, m.data); err != nil {
+			m.statusMsg = fmt.Sprintf("Save error: %s", err)
+		}
 	}
 }
 
@@ -729,14 +751,25 @@ func (m *model) indexInStatus(id int, status string) int {
 	return 0
 }
 
-func syncRemoteCmd(localData internal.Data) tea.Cmd {
+func syncRemoteCmd(localData internal.Data, dataPath string) tea.Cmd {
 	return func() tea.Msg {
 		settings, err := internal.LoadWebDAVSettings()
 		if err != nil {
+			// WebDAV not configured — reload from the local file so the
+			// user can pick up changes made by another device via the
+			// Nextcloud desktop client.
+			data, loadErr := internal.LoadData(dataPath)
+			if loadErr != nil {
+				return syncResultMsg{result: internal.SyncResult{
+					Data:    localData,
+					Action:  "error",
+					Message: fmt.Sprintf("reload failed: %s", loadErr),
+				}}
+			}
 			return syncResultMsg{result: internal.SyncResult{
-				Data:    localData,
-				Action:  "error",
-				Message: err.Error(),
+				Data:    data,
+				Action:  "local",
+				Message: "Reloaded from local file.",
 			}}
 		}
 		result := internal.SyncWithRemote(settings, localData)

@@ -62,14 +62,28 @@ func LoadData(path string) (Data, error) {
 	return NormalizeData(data), nil
 }
 
-// SaveData writes the data to the given path
+// SaveData writes the data to the given path, fsyncing to ensure the
+// OS flushes the write to disk so that file-watching sync clients
+// (e.g. Nextcloud desktop) detect the change immediately.
 func SaveData(path string, data Data) error {
 	data.LastModified = time.Now().Unix()
 	b, err := json.MarshalIndent(data, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, b, 0o600)
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(b); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
 }
 
 // NormalizeData ensures all fields have valid values
