@@ -107,6 +107,11 @@ func SyncWithRemote(settings WebDAVSettings, local Data) SyncResult {
 
 	remote = NormalizeData(remote)
 
+	// Never overwrite remote tasks with an empty local state (e.g. fresh install)
+	if len(local.Tasks) == 0 && len(remote.Tasks) > 0 {
+		return SyncResult{Data: remote, Action: "pulled", Message: "Pulled remote data"}
+	}
+
 	// Check for conflicts using LastModified
 	if remote.LastModified > local.LastModified {
 		// Remote is newer, pull it

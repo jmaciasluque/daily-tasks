@@ -12,6 +12,23 @@ import (
 	"daily-tasks/internal"
 )
 
+func parseDeadline(s string) (string, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "", nil
+	}
+	parts := strings.Split(s, ":")
+	if len(parts) != 2 || len(parts[0]) != 2 || len(parts[1]) != 2 {
+		return "", errors.New("deadline must be in HH:MM format")
+	}
+	h, err1 := strconv.Atoi(parts[0])
+	m, err2 := strconv.Atoi(parts[1])
+	if err1 != nil || err2 != nil || h < 0 || h > 23 || m < 0 || m > 59 {
+		return "", errors.New("deadline must be a valid time in HH:MM format")
+	}
+	return s, nil
+}
+
 func runNonTUI(args []string) (bool, error) {
 	if len(args) == 0 {
 		return false, nil
@@ -35,6 +52,8 @@ func runNonTUI(args []string) (bool, error) {
 		return true, runMove(cmdArgs, "done")
 	case "todo":
 		return true, runMove(cmdArgs, "todo")
+	case "skip":
+		return true, runSkip(cmdArgs)
 	case "delete", "del", "rm":
 		return true, runDelete(cmdArgs)
 	case "sync":
@@ -53,6 +72,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  list, ls         List tasks")
 	fmt.Fprintln(w, "  add              Add a task")
 	fmt.Fprintln(w, "  done             Mark a task as done")
+	fmt.Fprintln(w, "  skip             Mark a task as skipped")
 	fmt.Fprintln(w, "  todo             Mark a task as todo")
 	fmt.Fprintln(w, "  delete, del, rm  Delete a task")
 	fmt.Fprintln(w, "  sync             Sync with Nextcloud")
@@ -62,15 +82,19 @@ func printUsage(w io.Writer) {
 }
 
 func printListUsage(w io.Writer) {
-	fmt.Fprintln(w, "Usage: daily-tasks list [--status todo|done|all]")
+	fmt.Fprintln(w, "Usage: daily-tasks list [--status todo|done|skipped|all]")
 }
 
 func printAddUsage(w io.Writer) {
-	fmt.Fprintln(w, "Usage: daily-tasks add --title \"Task title\" --duration 15 [--status todo|done]")
+	fmt.Fprintln(w, "Usage: daily-tasks add --title \"Task title\" --duration 15 [--deadline HH:MM] [--status todo|done]")
 }
 
 func printMoveUsage(w io.Writer, status string) {
 	fmt.Fprintf(w, "Usage: daily-tasks %s <id> [--id <id>]\\n", status)
+}
+
+func printSkipUsage(w io.Writer) {
+	fmt.Fprintln(w, "Usage: daily-tasks skip <id> [--id <id>]")
 }
 
 func printDeleteUsage(w io.Writer) {
@@ -111,12 +135,16 @@ func runList(args []string) error {
 		printTaskGroup("TODO", internal.OrderedTasks(&data, "todo"))
 	case "done":
 		printTaskGroup("DONE", internal.OrderedTasks(&data, "done"))
+	case "skipped":
+		printTaskGroup("SKIPPED", internal.OrderedTasks(&data, "skipped"))
 	case "all":
 		printTaskGroup("TODO", internal.OrderedTasks(&data, "todo"))
 		fmt.Println("")
 		printTaskGroup("DONE", internal.OrderedTasks(&data, "done"))
+		fmt.Println("")
+		printTaskGroup("SKIPPED", internal.OrderedTasks(&data, "skipped"))
 	default:
-		return errors.New("status must be one of todo, done, all")
+		return errors.New("status must be one of todo, done, skipped, all")
 	}
 
 	if reset {
@@ -136,6 +164,7 @@ func runAdd(args []string) error {
 	fs.SetOutput(io.Discard)
 	title := fs.String("title", "", "task title")
 	duration := fs.Int("duration", 0, "duration in minutes")
+	deadline := fs.String("deadline", "", "daily reminder time in HH:MM format")
 	status := fs.String("status", "todo", "todo|done")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -151,6 +180,10 @@ func runAdd(args []string) error {
 	if statusValue != "todo" && statusValue != "done" {
 		return errors.New("status must be todo or done")
 	}
+	deadlineValue, err := parseDeadline(*deadline)
+	if err != nil {
+		return err
+	}
 
 	data, path, _, err := loadDataAndReset()
 	if err != nil {
@@ -163,6 +196,7 @@ func runAdd(args []string) error {
 		Duration: *duration,
 		Status:   statusValue,
 		Order:    internal.NextOrder(&data, statusValue),
+		Deadline: deadlineValue,
 	}
 	data.Tasks = append(data.Tasks, newTask)
 	data.NextID++
@@ -212,6 +246,47 @@ func runMove(args []string, status string) error {
 		return err
 	}
 	fmt.Printf("Updated task #%d to %s\n", id, status)
+	return nil
+}
+
+func runSkip(args []string) error {
+	if wantsHelp(args) {
+		printSkipUsage(os.Stdout)
+		return nil
+	}
+	fs := flag.NewFlagSet("skip", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	idFlag := fs.Int("id", 0, "task id")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	id, err := parseID(*idFlag, fs.Args())
+	if err != nil {
+		return err
+	}
+
+	data, path, _, err := loadDataAndReset()
+	if err != nil {
+		return err
+	}
+
+	task := internal.FindTask(&data, id)
+	if task == nil {
+		return fmt.Errorf("task %d not found", id)
+	}
+	if task.Status == "skipped" {
+		fmt.Printf("Task #%d already skipped\n", id)
+		return nil
+	}
+
+	task.Status = "skipped"
+	task.Order = internal.NextOrder(&data, "skipped")
+
+	if err := internal.SaveData(path, data); err != nil {
+		return err
+	}
+	fmt.Printf("Skipped task #%d\n", id)
 	return nil
 }
 
@@ -352,11 +427,17 @@ func parseID(id int, args []string) (int, error) {
 func printTaskGroup(label string, tasks []*internal.Task) {
 	fmt.Printf("%s (%d)\n", label, len(tasks))
 	for _, task := range tasks {
-		status := "[ ]"
+		marker := "[ ]"
 		if task.Status == "done" {
-			status = "[x]"
+			marker = "[x]"
+		} else if task.Status == "skipped" {
+			marker = "[-]"
 		}
-		fmt.Printf("%s #%d %s (%dm)\n", status, task.ID, task.Title, task.Duration)
+		line := fmt.Sprintf("%s #%d %s (%dm)", marker, task.ID, task.Title, task.Duration)
+		if task.Deadline != "" {
+			line += fmt.Sprintf(" [%s]", task.Deadline)
+		}
+		fmt.Println(line)
 	}
 }
 
