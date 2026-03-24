@@ -32,6 +32,17 @@
         "projectId": "e7c7b78d-a543-4624-bea0-0f4a9607984d"
       }
     },
-    "owner": "maclug"
+    "owner": "maclug",
+    "plugins": [
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#111111",
+          "defaultChannel": "default",
+          "androidMode": "default"
+        }
+      ]
+    ]
   }
 }

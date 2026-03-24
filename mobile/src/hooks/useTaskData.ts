@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { Data, Settings, Task } from '../types';
+import type { Data, Settings, Task, TaskStatus } from '../types';
 import { emptyData, normalizeData, resetIfNeeded, nextOrder, orderedTasks } from '../services/data';
 import { loadSettings, saveSettings, loadCachedData, saveCachedData } from '../services/storage';
 import { isSettingsComplete, pushRemoteData, syncWithRemote, defaultSettings } from '../services/webdav';
+import { rescheduleAllNotifications } from '../services/notifications';
 import { appVariant } from '../config/env';
 
 export function useTaskData() {
@@ -28,10 +29,11 @@ export function useTaskData() {
     })();
   }, [appVariant]);
 
-  // Save data to cache whenever it changes
+  // Save data to cache and reschedule notifications whenever data changes
   useEffect(() => {
     if (initialized) {
       saveCachedData(data);
+      rescheduleAllNotifications(data.tasks);
     }
   }, [data, initialized]);
 
@@ -85,7 +87,16 @@ export function useTaskData() {
     });
   }, [pushToRemote]);
 
-  const addTask = useCallback((title: string, duration: number) => {
+  /**
+   * Reload task data from the local cache.
+   * Call this after a notification action has updated storage in the background.
+   */
+  const reloadFromCache = useCallback(async () => {
+    const cached = await loadCachedData();
+    setData(resetIfNeeded(cached));
+  }, []);
+
+  const addTask = useCallback((title: string, duration: number, deadline?: string) => {
     updateData((prev) => {
       const id = prev.next_id || 1;
       const order = nextOrder(prev, 'todo');
@@ -94,17 +105,17 @@ export function useTaskData() {
         next_id: id + 1,
         tasks: [
           ...prev.tasks,
-          { id, title, duration, status: 'todo' as const, order },
+          { id, title, duration, status: 'todo' as const, order, deadline },
         ],
       };
     });
   }, [updateData]);
 
-  const editTask = useCallback((id: number, title: string, duration: number) => {
+  const editTask = useCallback((id: number, title: string, duration: number, deadline?: string) => {
     updateData((prev) => ({
       ...prev,
       tasks: prev.tasks.map((task) =>
-        task.id === id ? { ...task, title, duration } : task
+        task.id === id ? { ...task, title, duration, deadline } : task
       ),
     }));
   }, [updateData]);
@@ -118,12 +129,27 @@ export function useTaskData() {
 
   const toggleTaskStatus = useCallback((task: Task) => {
     updateData((prev) => {
-      const newStatus = task.status === 'todo' ? 'done' : 'todo';
+      // todo → done, done → todo, skipped → todo
+      const newStatus: TaskStatus = task.status === 'todo' ? 'done' : 'todo';
       const order = nextOrder(prev, newStatus);
       return {
         ...prev,
         tasks: prev.tasks.map((t) =>
           t.id === task.id ? { ...t, status: newStatus, order } : t
+        ),
+      };
+    });
+  }, [updateData]);
+
+  const skipTask = useCallback((id: number) => {
+    updateData((prev) => {
+      const task = prev.tasks.find(t => t.id === id);
+      if (!task || task.status !== 'todo') return prev;
+      const order = nextOrder(prev, 'skipped');
+      return {
+        ...prev,
+        tasks: prev.tasks.map((t) =>
+          t.id === id ? { ...t, status: 'skipped' as const, order } : t
         ),
       };
     });
@@ -200,10 +226,12 @@ export function useTaskData() {
     statusMsg,
     syncing,
     syncFromRemote,
+    reloadFromCache,
     addTask,
     editTask,
     deleteTask,
     toggleTaskStatus,
+    skipTask,
     moveTask,
     moveTaskToTop,
     cycleTheme,

@@ -16,8 +16,9 @@ type Task struct {
 	ID       int    `json:"id"`
 	Title    string `json:"title"`
 	Duration int    `json:"duration"`
-	Status   string `json:"status"` // "todo" or "done"
+	Status   string `json:"status"` // "todo", "done", or "skipped"
 	Order    int    `json:"order"`
+	Deadline string `json:"deadline,omitempty"` // HH:MM format, optional daily reminder time
 }
 
 // Data represents the complete task data structure
@@ -93,12 +94,15 @@ func NormalizeData(data Data) Data {
 func AssignMissingOrders(data *Data) {
 	maxTodo := 0
 	maxDone := 0
+	maxSkipped := 0
 	for i := range data.Tasks {
 		t := &data.Tasks[i]
 		if t.Order != 0 {
 			if t.Status == "done" && t.Order > maxDone {
 				maxDone = t.Order
-			} else if t.Status != "done" && t.Order > maxTodo {
+			} else if t.Status == "skipped" && t.Order > maxSkipped {
+				maxSkipped = t.Order
+			} else if t.Status == "todo" && t.Order > maxTodo {
 				maxTodo = t.Order
 			}
 			continue
@@ -106,6 +110,9 @@ func AssignMissingOrders(data *Data) {
 		if t.Status == "done" {
 			maxDone++
 			t.Order = maxDone
+		} else if t.Status == "skipped" {
+			maxSkipped++
+			t.Order = maxSkipped
 		} else {
 			maxTodo++
 			t.Order = maxTodo
@@ -194,8 +201,9 @@ func ResetIfNewDay(data *Data) bool {
 		return false
 	}
 
-	// Move all tasks to todo
+	// Move all tasks (todo, done, and skipped) back to todo
 	reset := append(OrderedTasks(data, "todo"), OrderedTasks(data, "done")...)
+	reset = append(reset, OrderedTasks(data, "skipped")...)
 	for i, t := range reset {
 		t.Status = "todo"
 		t.Order = i + 1
