@@ -50,7 +50,7 @@ func LoadData(path string) (Data, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return Data{LastReset: today, NextID: 1, LastModified: time.Now().Unix()}, nil
+			return Data{LastReset: today, NextID: 1, LastModified: 0}, nil
 		}
 		return Data{}, err
 	}
@@ -82,9 +82,6 @@ func NormalizeData(data Data) Data {
 	}
 	if data.ThemeIndex < 0 || data.ThemeIndex >= ThemeCount() {
 		data.ThemeIndex = 0
-	}
-	if data.LastModified == 0 {
-		data.LastModified = time.Now().Unix()
 	}
 	AssignMissingOrders(&data)
 	return data
