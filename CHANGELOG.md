@@ -10,6 +10,17 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 
 ---
 
+## [0.1.2] - 2026-03-25
+
+### Mobile
+
+#### Changed
+- Todo tasks are now sorted by deadline ascending — tasks with an earlier
+  deadline appear first, tasks without a deadline appear last. Done and
+  skipped lists retain their manual order.
+
+---
+
 ## [0.1.1] - 2026-03-25
 
 ### Mobile

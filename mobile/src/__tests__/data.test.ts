@@ -188,6 +188,57 @@ describe('orderedTasks', () => {
     const dataNoSkipped: Data = { ...data, tasks: data.tasks.filter(t => t.status !== 'skipped') };
     expect(orderedTasks(dataNoSkipped, 'skipped')).toEqual([]);
   });
+
+  it('sorts todo tasks by deadline ascending, no-deadline tasks last', () => {
+    const d: Data = {
+      last_reset: '2026-01-01',
+      next_id: 5,
+      tasks: [
+        { id: 1, title: 'A', duration: 5, status: 'todo', order: 1 },
+        { id: 2, title: 'B', duration: 5, status: 'todo', order: 2, deadline: '14:00' },
+        { id: 3, title: 'C', duration: 5, status: 'todo', order: 3, deadline: '08:00' },
+        { id: 4, title: 'D', duration: 5, status: 'todo', order: 4, deadline: '11:30' },
+      ],
+      theme_index: 0,
+    };
+    const todos = orderedTasks(d, 'todo');
+    expect(todos[0].id).toBe(3); // deadline 08:00
+    expect(todos[1].id).toBe(4); // deadline 11:30
+    expect(todos[2].id).toBe(2); // deadline 14:00
+    expect(todos[3].id).toBe(1); // no deadline, last
+  });
+
+  it('sorts multiple no-deadline todo tasks by order then id', () => {
+    const d: Data = {
+      last_reset: '2026-01-01',
+      next_id: 4,
+      tasks: [
+        { id: 1, title: 'A', duration: 5, status: 'todo', order: 3 },
+        { id: 2, title: 'B', duration: 5, status: 'todo', order: 1 },
+        { id: 3, title: 'C', duration: 5, status: 'todo', order: 2 },
+      ],
+      theme_index: 0,
+    };
+    const todos = orderedTasks(d, 'todo');
+    expect(todos[0].id).toBe(2); // order 1
+    expect(todos[1].id).toBe(3); // order 2
+    expect(todos[2].id).toBe(1); // order 3
+  });
+
+  it('does not apply deadline sorting to done or skipped tasks', () => {
+    const d: Data = {
+      last_reset: '2026-01-01',
+      next_id: 4,
+      tasks: [
+        { id: 1, title: 'A', duration: 5, status: 'done', order: 2, deadline: '08:00' },
+        { id: 2, title: 'B', duration: 5, status: 'done', order: 1, deadline: '20:00' },
+      ],
+      theme_index: 0,
+    };
+    const done = orderedTasks(d, 'done');
+    expect(done[0].id).toBe(2); // order 1, even though deadline is later
+    expect(done[1].id).toBe(1); // order 2
+  });
 });
 
 describe('resetIfNeeded', () => {
