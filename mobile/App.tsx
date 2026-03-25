@@ -12,6 +12,8 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import DraggableFlatList from 'react-native-draggable-flatlist';
 
 import { TaskRow, TaskEditor, SettingsModal } from './src/components';
 import { useTaskData } from './src/hooks/useTaskData';
@@ -37,8 +39,7 @@ export default function App() {
     deleteTask,
     toggleTaskStatus,
     skipTask,
-    moveTask,
-    moveTaskToTop,
+    reorderTasks,
     cycleTheme,
     updateSettings,
   } = useTaskData();
@@ -156,6 +157,7 @@ export default function App() {
   const skippedCount = data.tasks.filter(t => t.status === 'skipped').length;
 
   return (
+    <GestureHandlerRootView style={styles.gestureRoot}>
     <SafeAreaProvider>
       <SafeAreaView style={[styles.root, { backgroundColor: theme.bg }]} edges={['top', 'bottom']}>
         <StatusBar style={statusBarStyle} />
@@ -211,27 +213,48 @@ export default function App() {
 
         {/* Task List */}
         <View style={[styles.panel, { backgroundColor: theme.panelBg, borderColor: theme.border }]}>
-          <FlatList
-            data={list}
-            keyExtractor={(item) => String(item.id)}
-            contentContainerStyle={styles.listContent}
-            renderItem={({ item }) => (
-              <TaskRow
-                task={item}
-                theme={theme}
-                onMoveTop={() => moveTaskToTop(item)}
-                onMoveUp={() => moveTask(item, -1)}
-                onMoveDown={() => moveTask(item, 1)}
-                onToggle={() => toggleTaskStatus(item)}
-                onSkip={() => skipTask(item.id)}
-                onEdit={() => openEdit(item)}
-                onDelete={() => handleDeleteTask(item)}
-              />
-            )}
-            ListEmptyComponent={
-              <Text style={[styles.emptyText, { color: theme.muted }]}>No tasks.</Text>
-            }
-          />
+          {activeStatus === 'todo' ? (
+            <DraggableFlatList
+              data={list}
+              keyExtractor={(item) => String(item.id)}
+              contentContainerStyle={styles.listContent}
+              onDragEnd={({ data }) => reorderTasks(data)}
+              renderItem={({ item, drag, isActive }) => (
+                <TaskRow
+                  task={item}
+                  theme={theme}
+                  drag={drag}
+                  isActive={isActive}
+                  onToggle={() => toggleTaskStatus(item)}
+                  onSkip={() => skipTask(item.id)}
+                  onEdit={() => openEdit(item)}
+                  onDelete={() => handleDeleteTask(item)}
+                />
+              )}
+              ListEmptyComponent={
+                <Text style={[styles.emptyText, { color: theme.muted }]}>No tasks.</Text>
+              }
+            />
+          ) : (
+            <FlatList
+              data={list}
+              keyExtractor={(item) => String(item.id)}
+              contentContainerStyle={styles.listContent}
+              renderItem={({ item }) => (
+                <TaskRow
+                  task={item}
+                  theme={theme}
+                  onToggle={() => toggleTaskStatus(item)}
+                  onSkip={() => skipTask(item.id)}
+                  onEdit={() => openEdit(item)}
+                  onDelete={() => handleDeleteTask(item)}
+                />
+              )}
+              ListEmptyComponent={
+                <Text style={[styles.emptyText, { color: theme.muted }]}>No tasks.</Text>
+              }
+            />
+          )}
         </View>
 
         {/* Footer */}
@@ -286,10 +309,14 @@ export default function App() {
         />
       </SafeAreaView>
     </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
 
 const styles = StyleSheet.create({
+  gestureRoot: {
+    flex: 1,
+  },
   root: {
     flex: 1,
   },

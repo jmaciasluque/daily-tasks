@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { Data, Settings, Task, TaskStatus } from '../types';
-import { emptyData, normalizeData, resetIfNeeded, nextOrder, orderedTasks } from '../services/data';
+import { emptyData, normalizeData, resetIfNeeded, nextOrder } from '../services/data';
 import { loadSettings, saveSettings, loadCachedData, saveCachedData } from '../services/storage';
 import { isSettingsComplete, pushRemoteData, syncWithRemote, defaultSettings } from '../services/webdav';
 import { rescheduleAllNotifications } from '../services/notifications';
@@ -155,53 +155,15 @@ export function useTaskData() {
     });
   }, [updateData]);
 
-  const moveTask = useCallback((task: Task, delta: number) => {
-    updateData((prev) => {
-      const list = orderedTasks(prev, task.status);
-      const idx = list.findIndex((t) => t.id === task.id);
-      const swapIdx = idx + delta;
-      if (idx < 0 || swapIdx < 0 || swapIdx >= list.length) {
-        return prev;
-      }
-      const current = list[idx];
-      const target = list[swapIdx];
-      return {
-        ...prev,
-        tasks: prev.tasks.map((t) => {
-          if (t.id === current.id) return { ...t, order: target.order };
-          if (t.id === target.id) return { ...t, order: current.order };
-          return t;
-        }),
-      };
-    });
-  }, [updateData]);
-
-  const moveTaskToTop = useCallback((task: Task) => {
-    updateData((prev) => {
-      const list = orderedTasks(prev, task.status);
-      if (list.length === 0) {
-        return prev;
-      }
-
-      const orderedIds = [
-        task.id,
-        ...list.filter((t) => t.id !== task.id).map((t) => t.id),
-      ];
-
-      return {
-        ...prev,
-        tasks: prev.tasks.map((t) => {
-          if (t.status !== task.status) {
-            return t;
-          }
-          const idx = orderedIds.indexOf(t.id);
-          if (idx === -1) {
-            return t;
-          }
-          return { ...t, order: idx + 1 };
-        }),
-      };
-    });
+  const reorderTasks = useCallback((reorderedTodos: Task[]) => {
+    updateData((prev) => ({
+      ...prev,
+      tasks: prev.tasks.map((t) => {
+        if (t.status !== 'todo') return t;
+        const idx = reorderedTodos.findIndex((rt) => rt.id === t.id);
+        return idx === -1 ? t : { ...t, order: idx + 1 };
+      }),
+    }));
   }, [updateData]);
 
   const cycleTheme = useCallback(() => {
@@ -232,8 +194,7 @@ export function useTaskData() {
     deleteTask,
     toggleTaskStatus,
     skipTask,
-    moveTask,
-    moveTaskToTop,
+    reorderTasks,
     cycleTheme,
     updateSettings,
   };
