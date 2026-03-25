@@ -10,6 +10,20 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 
 ---
 
+## [0.1.1] - 2026-03-25
+
+### Mobile
+
+#### Fixed
+- Notification action buttons (Mark Done / Skip for Today) now work reliably on
+  Android — changed `opensAppToForeground` to `true` so the app launches and
+  the JS handler fires even when the app process was killed
+- Added `getLastNotificationResponseAsync()` fallback on app mount to catch
+  notification responses that arrived before the listener was registered (cold
+  start via notification button tap)
+
+---
+
 ## [0.1.0] - 2026-03-25
 
 First versioned release. Captures the full feature set that has accumulated

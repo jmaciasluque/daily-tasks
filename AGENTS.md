@@ -27,6 +27,11 @@ consistently.
 2. Read `CHANGELOG.md` to understand what is already in the codebase.
 3. Read `schema.json` before touching the data model — both clients share it.
 
+> **IMPORTANT — every PR must include version bumps and a changelog entry.**
+> Do not create a commit or open a PR without first bumping the version in
+> `cli/internal/version.go` (and `mobile/app.json` if mobile changed) and
+> adding an entry to `CHANGELOG.md`. See the versioning rules below.
+
 ---
 
 ## Branch naming
