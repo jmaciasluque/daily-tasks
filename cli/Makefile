@@ -1,15 +1,18 @@
 .PHONY: all build run test test-verbose clean lint fmt help
 
+VERSION := $(shell cat ../VERSION 2>/dev/null || echo dev)
+LDFLAGS := -X 'daily-tasks/internal.Version=$(VERSION)'
+
 # Default target
 all: test build
 
 # Build the binary
 build:
-	go build -o bin/daily-tasks .
+	go build -ldflags "$(LDFLAGS)" -o bin/daily-tasks .
 
 # Run the application
 run:
-	go run .
+	go run -ldflags "$(LDFLAGS)" .
 
 # Run tests
 test:

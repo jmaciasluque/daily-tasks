@@ -27,10 +27,10 @@ consistently.
 2. Read `CHANGELOG.md` to understand what is already in the codebase.
 3. Read `schema.json` before touching the data model — both clients share it.
 
-> **IMPORTANT — every PR must include version bumps and a changelog entry.**
+> **IMPORTANT — every PR must include a version bump and a changelog entry.**
 > Do not create a commit or open a PR without first bumping the version in
-> `cli/internal/version.go` (and `mobile/app.json` if mobile changed) and
-> adding an entry to `CHANGELOG.md`. See the versioning rules below.
+> the root `VERSION` file and adding an entry to `CHANGELOG.md`.
+> See the versioning rules below.
 
 ---
 
@@ -48,12 +48,16 @@ Always branch from `main`. Never commit directly to `main`.
 
 ## Versioning rules (mandatory on every PR)
 
-The version lives in two places:
+The version lives in a **single file**: `VERSION` at the repository root.
+Both codebases read from it automatically:
 
-| File | Field |
+| Codebase | How it reads `VERSION` |
 |---|---|
-| `cli/internal/version.go` | `const Version = "x.y.z"` |
-| `mobile/app.json` | `"version"` and `"runtimeVersion"` (if mobile changed) |
+| CLI (Go) | Injected at build time via `-ldflags` in the Makefile |
+| Mobile (Expo) | Read by `app.config.js` at build/start time |
+
+**Only edit the root `VERSION` file** — do not hardcode versions in
+`cli/internal/version.go` or `mobile/app.json`.
 
 Bump the **right** level:
 
@@ -144,7 +148,7 @@ Current task statuses: `"todo"`, `"done"`, `"skipped"`.
 - [ ] `go build ./...` passes
 - [ ] `go test ./...` passes (CLI)
 - [ ] `npm test` passes (mobile, if touched)
-- [ ] `cli/internal/version.go` bumped appropriately
+- [ ] Root `VERSION` file bumped appropriately
 - [ ] `CHANGELOG.md` entry added
 - [ ] `BACKLOG.md` updated if an issue was closed or added
 - [ ] `schema.json` updated if the data model changed
