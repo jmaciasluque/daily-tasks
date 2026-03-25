@@ -30,22 +30,24 @@ export DAILY_TASKS_PATH="$HOME/.config/daily-tasks/data.json"
 
 | Key | Action |
 |-----|--------|
-| `a` | Add task |
-| `e` | Edit task |
-| `d` | Delete task |
-| `space` | Move task between To Do and Done |
-| `J` | Move task down |
-| `K` | Move task up |
-| `H` | Move task to other column |
-| `L` | Move task to other column |
-| `t` | Cycle theme |
-| `u` | Undo last change |
-| `r` | Sync from Nextcloud (pull + push based on timestamps) |
-| `p` | Push to Nextcloud (force push local data) |
-| `h` | Focus To Do column |
-| `l` | Focus Done column |
-| `tab` | Switch column |
-| `q` | Quit |
+| `a` | Add task (title, duration, optional deadline HH:MM) |
+| `e` | Edit selected task |
+| `d` | Delete selected task (asks for confirmation) |
+| `s` | Skip selected To Do task → moves it to the Skipped column |
+| `space` | Toggle selected task between To Do and Done |
+| `J` | Move task down within its column |
+| `K` | Move task up within its column |
+| `H` | Move task to the left column |
+| `L` | Move task to the right column |
+| `h` | Focus left column |
+| `l` | Focus right column |
+| `tab` | Focus next column (To Do → Done → Skipped → To Do) |
+| `shift+tab` | Focus previous column |
+| `t` | Cycle through 25 colour themes |
+| `u` | Undo last change (up to 100 steps) |
+| `r` | Sync with Nextcloud (pull or push based on timestamps) |
+| `p` | Force-push local data to Nextcloud |
+| `q` / `ctrl+c` | Quit |
 
 ## Non-TUI Commands
 
@@ -54,13 +56,17 @@ You can run the CLI without the TUI using subcommands:
 ```bash
 daily-tasks list
 daily-tasks list --status todo
+daily-tasks list --status skipped
+daily-tasks list --status all
 daily-tasks add --title "Write report" --duration 45
-daily-tasks add --title "Standup" --duration 15 --status done
+daily-tasks add --title "Standup" --duration 15 --deadline 09:00
 daily-tasks done 3
+daily-tasks skip 3
 daily-tasks todo 3
 daily-tasks delete 3
 daily-tasks sync
 daily-tasks push
+daily-tasks version
 ```
 
 ## WebDAV Sync
@@ -102,13 +108,16 @@ The data file is a JSON file with this structure:
       "title": "Task title",
       "duration": 10,
       "status": "todo",
-      "order": 1
+      "order": 1,
+      "deadline": "09:00"
     }
   ],
   "theme_index": 0,
   "last_modified": 1737628800
 }
 ```
+
+Task statuses: `"todo"`, `"done"`, `"skipped"`. Skipped tasks reset to `"todo"` at the start of the next day, the same as done tasks.
 
 ## Development
 
