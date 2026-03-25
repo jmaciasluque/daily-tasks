@@ -10,6 +10,17 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 
 ---
 
+## [0.1.4] - 2026-03-25
+
+### Mobile
+
+#### Changed
+- Todo tasks can now be reordered by drag-and-drop — long-press the ⠿ handle on
+  the left of a row to start dragging, release to drop. The ↑/↓/Top buttons have
+  been removed.
+
+---
+
 ## [0.1.3] - 2026-03-25
 
 ### Mobile
