@@ -38,6 +38,9 @@ func runNonTUI(args []string) (bool, error) {
 	case "-h", "--help", "help":
 		printUsage(os.Stdout)
 		return true, nil
+	case "-v", "--version", "version":
+		fmt.Println(internal.Version)
+		return true, nil
 	}
 
 	cmd := args[0]
@@ -66,6 +69,8 @@ func runNonTUI(args []string) (bool, error) {
 }
 
 func printUsage(w io.Writer) {
+	fmt.Fprintf(w, "daily-tasks %s\n", internal.Version)
+	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Usage: daily-tasks [command] [options]")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Commands:")
