@@ -25,7 +25,7 @@ export function TaskRow({ task, theme, onMoveTop, onMoveUp, onMoveDown, onToggle
         </Text>
       </View>
       <View style={styles.rowActions}>
-        {task.status !== 'skipped' && (
+        {task.status === 'todo' && (
           <>
             <Pressable onPress={onMoveTop} style={[styles.iconButton, { borderColor: theme.border }]}>
               <Text style={{ color: theme.text }}>Top</Text>
