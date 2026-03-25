@@ -10,6 +10,16 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 
 ---
 
+## [0.1.3] - 2026-03-25
+
+### Mobile
+
+#### Changed
+- Reorder buttons (Top, ↑, ↓) are now hidden for Done tasks — only Todo tasks
+  can be reordered.
+
+---
+
 ## [0.1.2] - 2026-03-25
 
 ### Mobile
