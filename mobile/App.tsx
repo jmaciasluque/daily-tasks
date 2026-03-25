@@ -58,6 +58,15 @@ export default function App() {
   useEffect(() => {
     setupNotifications();
 
+    // Pick up any notification response that arrived before the listener
+    // was registered (e.g. app was killed and relaunched via a button tap)
+    Notifications.getLastNotificationResponseAsync().then(async (response) => {
+      if (response) {
+        const changed = await handleNotificationAction(response);
+        if (changed) await reloadFromCache();
+      }
+    });
+
     // Handle notification actions (Skip / Mark Done) — fired when user interacts
     // with a notification, whether the app is in foreground or background
     const responseSub = Notifications.addNotificationResponseReceivedListener(async (response) => {

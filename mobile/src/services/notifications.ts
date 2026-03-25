@@ -26,12 +26,12 @@ export async function setupNotifications(): Promise<boolean> {
       {
         identifier: 'done',
         buttonTitle: 'Mark Done',
-        options: { opensAppToForeground: false },
+        options: { opensAppToForeground: true },
       },
       {
         identifier: 'skip',
         buttonTitle: 'Skip for Today',
-        options: { opensAppToForeground: false },
+        options: { opensAppToForeground: true },
       },
     ]);
 
