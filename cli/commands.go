@@ -449,3 +449,20 @@ func wantsHelp(args []string) bool {
 	}
 	return false
 }
+
+func parseDeadline(s string) (string, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "", nil
+	}
+	parts := strings.Split(s, ":")
+	if len(parts) != 2 || len(parts[0]) != 2 || len(parts[1]) != 2 {
+		return "", errors.New("deadline must be in HH:MM format")
+	}
+	h, err1 := strconv.Atoi(parts[0])
+	m, err2 := strconv.Atoi(parts[1])
+	if err1 != nil || err2 != nil || h < 0 || h > 23 || m < 0 || m > 59 {
+		return "", errors.New("deadline must be a valid time in HH:MM format")
+	}
+	return s, nil
+}

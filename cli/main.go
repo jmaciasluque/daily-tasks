@@ -29,9 +29,16 @@ type taskItem struct {
 	id       int
 	title    string
 	duration int
+	deadline string
 }
 
-func (t taskItem) Title() string       { return fmt.Sprintf("%s • %dm", t.title, t.duration) }
+func (t taskItem) Title() string {
+	s := fmt.Sprintf("%s • %dm", t.title, t.duration)
+	if t.deadline != "" {
+		s += fmt.Sprintf(" • ⏰ %s", t.deadline)
+	}
+	return s
+}
 func (t taskItem) Description() string { return "" }
 func (t taskItem) FilterValue() string { return t.title }
 
@@ -45,21 +52,25 @@ type pushResultMsg struct {
 	err error
 }
 
+// colStatus maps TUI column index to task status
+var colStatus = [3]string{"todo", "done", "skipped"}
+
 type model struct {
-	data        internal.Data
-	dataPath    string
-	lists       [2]list.Model
-	focused     int
-	width       int
-	height      int
-	mode        mode
-	titleInput  textinput.Model
-	durInput    textinput.Model
-	editID      int
-	errMsg      string
-	statusMsg   string
-	lastChecked string
-	history     []internal.Data
+	data          internal.Data
+	dataPath      string
+	lists         [3]list.Model
+	focused       int
+	width         int
+	height        int
+	mode          mode
+	titleInput    textinput.Model
+	durInput      textinput.Model
+	deadlineInput textinput.Model
+	editID        int
+	errMsg        string
+	statusMsg     string
+	lastChecked   string
+	history       []internal.Data
 	// setup screen
 	setupInputs  [3]textinput.Model
 	setupFocused int
@@ -111,8 +122,9 @@ func main() {
 func newModel(data internal.Data, path string, cfgPath string) model {
 	todoList := list.New([]list.Item{}, list.NewDefaultDelegate(), 0, 0)
 	doneList := list.New([]list.Item{}, list.NewDefaultDelegate(), 0, 0)
+	skippedList := list.New([]list.Item{}, list.NewDefaultDelegate(), 0, 0)
 
-	for _, l := range []*list.Model{&todoList, &doneList} {
+	for _, l := range []*list.Model{&todoList, &doneList, &skippedList} {
 		l.SetShowFilter(false)
 		l.SetShowHelp(false)
 		l.SetShowStatusBar(false)
@@ -129,17 +141,22 @@ func newModel(data internal.Data, path string, cfgPath string) model {
 	dur.Placeholder = "Duration (minutes)"
 	dur.CharLimit = 4
 
+	deadline := textinput.New()
+	deadline.Placeholder = "Deadline HH:MM (optional)"
+	deadline.CharLimit = 5
+
 	m := model{
-		data:       data,
-		dataPath:   path,
-		configPath: cfgPath,
-		lists:      [2]list.Model{todoList, doneList},
-		focused:    0,
-		mode:       modeNormal,
-		titleInput: title,
-		durInput:   dur,
-		width:      80,
-		height:     24,
+		data:          data,
+		dataPath:      path,
+		configPath:    cfgPath,
+		lists:         [3]list.Model{todoList, doneList, skippedList},
+		focused:       0,
+		mode:          modeNormal,
+		titleInput:    title,
+		durInput:      dur,
+		deadlineInput: deadline,
+		width:         80,
+		height:        24,
 	}
 	m.ensureReset()
 	m.applyTheme()
@@ -232,26 +249,27 @@ func (m model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "ctrl+c", "q":
 		return m, tea.Quit
-	case "tab", "shift+tab":
-		if m.focused == 0 {
-			m.focused = 1
-		} else {
-			m.focused = 0
-		}
+	case "tab":
+		m.focused = (m.focused + 1) % 3
+		return m, nil
+	case "shift+tab":
+		m.focused = (m.focused + 2) % 3
 		return m, nil
 	case "h":
-		m.focused = 0
+		m.focused = (m.focused + 2) % 3
 		return m, nil
 	case "l":
-		m.focused = 1
+		m.focused = (m.focused + 1) % 3
 		return m, nil
 	case "a":
 		m.mode = modeAdd
 		m.errMsg = ""
 		m.titleInput.SetValue("")
 		m.durInput.SetValue("")
+		m.deadlineInput.SetValue("")
 		m.titleInput.Focus()
 		m.durInput.Blur()
+		m.deadlineInput.Blur()
 		return m, nil
 	case "r":
 		m.statusMsg = "Syncing from Nextcloud..."
@@ -281,8 +299,10 @@ func (m model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.editID = t.ID
 		m.titleInput.SetValue(t.Title)
 		m.durInput.SetValue(strconv.Itoa(t.Duration))
+		m.deadlineInput.SetValue(t.Deadline)
 		m.titleInput.Focus()
 		m.durInput.Blur()
+		m.deadlineInput.Blur()
 		return m, nil
 	case "d":
 		t := m.selectedTask()
@@ -293,6 +313,17 @@ func (m model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.mode = modeDeleteConfirm
 		m.errMsg = ""
 		m.editID = t.ID
+		return m, nil
+	case "s":
+		t := m.selectedTask()
+		if t == nil || t.Status != "todo" {
+			return m, nil
+		}
+		m.pushHistory()
+		t.Status = "skipped"
+		t.Order = internal.NextOrder(&m.data, "skipped")
+		m.syncLists()
+		_ = internal.SaveData(m.dataPath, m.data)
 		return m, nil
 	case "enter", " ":
 		t := m.selectedTask()
@@ -328,7 +359,7 @@ func (m model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "H":
 		m.pushHistory()
 		oldIdx := m.lists[m.focused].Index()
-		if ok, _ := m.moveTaskToOther(); ok {
+		if ok, _ := m.moveTaskToCol((m.focused + 2) % 3); ok {
 			m.syncLists()
 			m.lists[m.focused].Select(internal.ClampIndex(oldIdx, len(m.lists[m.focused].Items())))
 			_ = internal.SaveData(m.dataPath, m.data)
@@ -337,7 +368,7 @@ func (m model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "L":
 		m.pushHistory()
 		oldIdx := m.lists[m.focused].Index()
-		if ok, _ := m.moveTaskToOther(); ok {
+		if ok, _ := m.moveTaskToCol((m.focused + 1) % 3); ok {
 			m.syncLists()
 			m.lists[m.focused].Select(internal.ClampIndex(oldIdx, len(m.lists[m.focused].Items())))
 			_ = internal.SaveData(m.dataPath, m.data)
@@ -357,18 +388,28 @@ func (m model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) updateEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	inputs := []*textinput.Model{&m.titleInput, &m.durInput, &m.deadlineInput}
 	switch msg.String() {
 	case "esc":
 		m.mode = modeNormal
 		m.errMsg = ""
 		return m, nil
-	case "tab", "shift+tab":
-		if m.titleInput.Focused() {
-			m.titleInput.Blur()
-			m.durInput.Focus()
-		} else {
-			m.durInput.Blur()
-			m.titleInput.Focus()
+	case "tab":
+		for i, inp := range inputs {
+			if inp.Focused() {
+				inp.Blur()
+				inputs[(i+1)%len(inputs)].Focus()
+				break
+			}
+		}
+		return m, nil
+	case "shift+tab":
+		for i, inp := range inputs {
+			if inp.Focused() {
+				inp.Blur()
+				inputs[(i+len(inputs)-1)%len(inputs)].Focus()
+				break
+			}
 		}
 		return m, nil
 	case "enter":
@@ -377,7 +418,11 @@ func (m model) updateEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.durInput.Focus()
 			return m, nil
 		}
-
+		if m.durInput.Focused() {
+			m.durInput.Blur()
+			m.deadlineInput.Focus()
+			return m, nil
+		}
 		title := strings.TrimSpace(m.titleInput.Value())
 		dur, err := internal.ParseDuration(m.durInput.Value())
 		if err != nil {
@@ -388,6 +433,11 @@ func (m model) updateEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.errMsg = "Title cannot be empty"
 			return m, nil
 		}
+		deadlineVal, err := parseDeadline(m.deadlineInput.Value())
+		if err != nil {
+			m.errMsg = err.Error()
+			return m, nil
+		}
 		m.pushHistory()
 		if m.mode == modeAdd {
 			m.data.Tasks = append(m.data.Tasks, internal.Task{
@@ -396,6 +446,7 @@ func (m model) updateEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				Duration: dur,
 				Status:   "todo",
 				Order:    internal.NextOrder(&m.data, "todo"),
+				Deadline: deadlineVal,
 			})
 			m.data.NextID++
 		} else {
@@ -403,6 +454,7 @@ func (m model) updateEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if t != nil {
 				t.Title = title
 				t.Duration = dur
+				t.Deadline = deadlineVal
 			}
 		}
 		m.mode = modeNormal
@@ -415,8 +467,10 @@ func (m model) updateEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	if m.titleInput.Focused() {
 		m.titleInput, cmd = m.titleInput.Update(msg)
-	} else {
+	} else if m.durInput.Focused() {
 		m.durInput, cmd = m.durInput.Update(msg)
+	} else {
+		m.deadlineInput, cmd = m.deadlineInput.Update(msg)
 	}
 	return m, cmd
 }
@@ -502,7 +556,7 @@ func (m model) View() string {
 		Foreground(lipgloss.Color(theme.Text)).
 		Render("Daily Tasks")
 
-	cols := lipgloss.JoinHorizontal(lipgloss.Top, m.renderList(0), m.renderList(1))
+	cols := lipgloss.JoinHorizontal(lipgloss.Top, m.renderList(0), m.renderList(1), m.renderList(2))
 	footer := m.renderFooter()
 	modal := m.renderModal()
 
@@ -514,8 +568,6 @@ func (m model) View() string {
 		content = lipgloss.JoinVertical(lipgloss.Left, content, modal)
 	}
 
-	// Fill the entire terminal with the background color
-	// Use lipgloss.Place to position content and fill whitespace with bg color
 	return lipgloss.Place(
 		m.width,
 		m.height,
@@ -531,7 +583,6 @@ func (m model) renderList(idx int) string {
 	theme := m.currentTheme()
 	listWidth := m.lists[idx].Width()
 
-	// Base title style - set width to fill the panel
 	titleStyle := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(lipgloss.Color(theme.Text)).
@@ -542,10 +593,8 @@ func (m model) renderList(idx int) string {
 	focusedTitleStyle := titleStyle.Copy().
 		Background(lipgloss.Color(theme.FocusBg))
 
-	title := "To Do"
-	if idx == 1 {
-		title = "Done"
-	}
+	titles := [3]string{"To Do", "Done", "Skipped"}
+	title := titles[idx]
 	if idx == m.focused && m.mode == modeNormal {
 		title = focusedTitleStyle.Render(title)
 	} else {
@@ -573,7 +622,7 @@ func (m model) renderFooter() string {
 		return ""
 	}
 	theme := m.currentTheme()
-	help := fmt.Sprintf("a:add  e:edit  d:delete  space:move  J/K:reorder  r:sync  p:push  t:theme (%s)  c:config  tab:switch  q:quit", theme.Name)
+	help := fmt.Sprintf("a:add  e:edit  d:delete  s:skip  space:toggle  J/K:reorder  H/L:move  r:sync  p:push  t:theme (%s)  c:config  tab:switch  q:quit", theme.Name)
 	helpLine := lipgloss.NewStyle().
 		Foreground(lipgloss.Color(theme.Muted)).
 		Render(help)
@@ -671,7 +720,10 @@ func (m model) editView(title string) string {
 		"Duration (minutes):",
 		m.durInput.View(),
 		"",
-		"enter:save  esc:cancel  tab:switch",
+		"Deadline (HH:MM, optional):",
+		m.deadlineInput.View(),
+		"",
+		"enter:next  tab:switch  esc:cancel",
 	}
 	if m.errMsg != "" {
 		lines = append(lines, "", errStyle.Render(m.errMsg))
@@ -680,12 +732,12 @@ func (m model) editView(title string) string {
 }
 
 func (m *model) resizeLists() {
-	gap := 2
-	usableWidth := m.width - gap - 6
-	if usableWidth < 40 {
-		usableWidth = 40
+	gap := 4
+	usableWidth := m.width - gap - 8
+	if usableWidth < 60 {
+		usableWidth = 60
 	}
-	listWidth := usableWidth / 2
+	listWidth := usableWidth / 3
 	listHeight := m.height - 10
 	if listHeight < 5 {
 		listHeight = 5
@@ -697,16 +749,19 @@ func (m *model) resizeLists() {
 }
 
 func (m *model) syncLists() {
-	var todoItems []list.Item
-	var doneItems []list.Item
+	var todoItems, doneItems, skippedItems []list.Item
 	for _, t := range internal.OrderedTasks(&m.data, "todo") {
-		todoItems = append(todoItems, taskItem{id: t.ID, title: t.Title, duration: t.Duration})
+		todoItems = append(todoItems, taskItem{id: t.ID, title: t.Title, duration: t.Duration, deadline: t.Deadline})
 	}
 	for _, t := range internal.OrderedTasks(&m.data, "done") {
-		doneItems = append(doneItems, taskItem{id: t.ID, title: t.Title, duration: t.Duration})
+		doneItems = append(doneItems, taskItem{id: t.ID, title: t.Title, duration: t.Duration, deadline: t.Deadline})
+	}
+	for _, t := range internal.OrderedTasks(&m.data, "skipped") {
+		skippedItems = append(skippedItems, taskItem{id: t.ID, title: t.Title, duration: t.Duration, deadline: t.Deadline})
 	}
 	m.lists[0].SetItems(todoItems)
 	m.lists[1].SetItems(doneItems)
+	m.lists[2].SetItems(skippedItems)
 }
 
 func (m *model) selectedTask() *internal.Task {
@@ -788,10 +843,7 @@ func (m *model) applyTheme() {
 }
 
 func (m *model) moveTask(delta int) (bool, int) {
-	status := "todo"
-	if m.focused == 1 {
-		status = "done"
-	}
+	status := colStatus[m.focused]
 	ordered := internal.OrderedTasks(&m.data, status)
 	if len(ordered) == 0 {
 		return false, 0
@@ -808,18 +860,15 @@ func (m *model) moveTask(delta int) (bool, int) {
 	return true, swapIdx
 }
 
-func (m *model) moveTaskToOther() (bool, int) {
+func (m *model) moveTaskToCol(targetCol int) (bool, int) {
 	t := m.selectedTask()
 	if t == nil {
 		return false, 0
 	}
-	if t.Status == "todo" {
-		t.Status = "done"
-	} else {
-		t.Status = "todo"
-	}
-	t.Order = internal.NextOrder(&m.data, t.Status)
-	newIdx := m.indexInStatus(t.ID, t.Status)
+	newStatus := colStatus[targetCol]
+	t.Status = newStatus
+	t.Order = internal.NextOrder(&m.data, newStatus)
+	newIdx := m.indexInStatus(t.ID, newStatus)
 	return true, newIdx
 }
 
