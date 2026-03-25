@@ -1,3 +1,5 @@
+const fs = require('fs');
+const path = require('path');
 const baseConfig = require('./app.json');
 
 const appVariant = process.env.APP_VARIANT || 'production';
@@ -8,7 +10,11 @@ const commitFromEnv = process.env.APP_VERSION_SUFFIX
   || '';
 const versionSuffix = commitFromEnv ? commitFromEnv.slice(0, 7) : '';
 
-const baseVersion = baseConfig.expo.version;
+// Read version from the single source of truth at repo root
+const versionFile = path.resolve(__dirname, '..', 'VERSION');
+const baseVersion = fs.existsSync(versionFile)
+  ? fs.readFileSync(versionFile, 'utf8').trim()
+  : baseConfig.expo.version;
 const version = isTesting && versionSuffix
   ? `${baseVersion}-${versionSuffix}`
   : baseVersion;
