@@ -10,6 +10,16 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 
 ---
 
+## [0.1.5] - 2026-03-26
+
+### Mobile
+
+#### Changed
+- Replaced text action labels with icons: ✅ (mark done), ⏭ (skip), 📝 (edit), 🗑️ (delete)
+- Skipped items now show a faded ⏭ badge to visually connect the skip action with the skipped state
+
+---
+
 ## [0.1.4] - 2026-03-25
 
 ### Mobile
