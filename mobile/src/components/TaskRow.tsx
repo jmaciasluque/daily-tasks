@@ -33,19 +33,24 @@ export function TaskRow({ task, theme, drag, isActive, onToggle, onSkip, onEdit,
       <View style={styles.rowActions}>
         <Pressable onPress={onToggle} style={[styles.iconButton, { borderColor: theme.border }]}>
           <Text style={{ color: theme.text }}>
-            {task.status === 'todo' ? '✓' : '↩'}
+            {task.status === 'todo' ? '✅' : '↩'}
           </Text>
         </Pressable>
         {task.status === 'todo' && onSkip && (
           <Pressable onPress={onSkip} style={[styles.iconButton, { borderColor: theme.border }]}>
-            <Text style={{ color: theme.muted }}>Skip</Text>
+            <Text style={{ color: theme.muted }}>⏭</Text>
           </Pressable>
         )}
+        {task.status === 'skipped' && (
+          <View style={[styles.iconButton, styles.iconBadge, { borderColor: theme.border }]}>
+            <Text style={{ color: theme.muted }}>⏭</Text>
+          </View>
+        )}
         <Pressable onPress={onEdit} style={[styles.iconButton, { borderColor: theme.border }]}>
-          <Text style={{ color: theme.text }}>Edit</Text>
+          <Text style={{ color: theme.text }}>📝</Text>
         </Pressable>
         <Pressable onPress={onDelete} style={[styles.iconButton, { borderColor: theme.border }]}>
-          <Text style={{ color: theme.text }}>Del</Text>
+          <Text style={{ color: theme.text }}>🗑️</Text>
         </Pressable>
       </View>
     </View>
@@ -96,5 +101,8 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingHorizontal: 10,
     paddingVertical: 6,
+  },
+  iconBadge: {
+    opacity: 0.4,
   },
 });
