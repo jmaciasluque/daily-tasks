@@ -64,7 +64,14 @@ export function assignMissingOrders(data: Data): void {
 export function orderedTasks(data: Data, status: TaskStatus): Task[] {
   return data.tasks
     .filter((task) => task.status === status)
-    .sort((a, b) => a.order === b.order ? a.id - b.id : a.order - b.order);
+    .sort((a, b) => {
+      if (status === 'todo') {
+        if (a.deadline && b.deadline) return a.deadline.localeCompare(b.deadline);
+        if (a.deadline) return -1;
+        if (b.deadline) return 1;
+      }
+      return a.order === b.order ? a.id - b.id : a.order - b.order;
+    });
 }
 
 export function resetIfNeeded(data: Data): Data {
