@@ -10,6 +10,16 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 
 ---
 
+## [0.2.1] - 2026-03-27
+
+### CI
+
+#### Changed
+- Removed the GitHub Actions `EAS Build (APK)` workflow so mobile client build
+  jobs no longer run from repository pushes or tags
+
+---
+
 ## [0.2.0] - 2026-03-27
 
 ### CLI
