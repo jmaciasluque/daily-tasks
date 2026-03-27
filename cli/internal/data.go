@@ -30,6 +30,13 @@ type Data struct {
 	LastModified int64  `json:"last_modified,omitempty"`
 }
 
+func normalizeLastModified(ts int64) int64 {
+	if ts > 0 && ts < 100000000000 {
+		return ts * 1000
+	}
+	return ts
+}
+
 // DefaultDataPath returns the default path for the data file
 func DefaultDataPath() (string, error) {
 	// Check environment variable first
@@ -64,7 +71,7 @@ func LoadData(path string) (Data, error) {
 
 // SaveData writes the data to the given path
 func SaveData(path string, data Data) error {
-	data.LastModified = time.Now().Unix()
+	data.LastModified = time.Now().UnixMilli()
 	b, err := json.MarshalIndent(data, "", "  ")
 	if err != nil {
 		return err
@@ -83,6 +90,7 @@ func NormalizeData(data Data) Data {
 	if data.ThemeIndex < 0 || data.ThemeIndex >= ThemeCount() {
 		data.ThemeIndex = 0
 	}
+	data.LastModified = normalizeLastModified(data.LastModified)
 	AssignMissingOrders(&data)
 	return data
 }
@@ -206,7 +214,7 @@ func ResetIfNewDay(data *Data) bool {
 		t.Order = i + 1
 	}
 	data.LastReset = today
-	data.LastModified = time.Now().Unix()
+	data.LastModified = time.Now().UnixMilli()
 	return true
 }
 

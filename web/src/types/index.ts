@@ -17,9 +17,13 @@ export type Data = {
   last_modified?: number;
 };
 
-export type Settings = {
-  baseUrl: string;
-  username: string;
-  password: string;
-  remotePath: string;
+export type ServerAction = 'loaded' | 'saved' | 'pulled' | 'pushed' | 'error' | 'in_sync';
+
+export type ServerState = {
+  action?: ServerAction;
+  data: Data;
+  data_path: string;
+  message?: string;
+  sync_configured: boolean;
+  version: string;
 };

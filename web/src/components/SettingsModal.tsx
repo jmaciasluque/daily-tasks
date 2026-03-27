@@ -1,29 +1,16 @@
 import React from 'react';
-import type { Settings } from '../types';
+import type { ServerState } from '../types';
 import type { Theme } from '../theme/themes';
 
 type Props = {
   visible: boolean;
-  settings: Settings;
+  serverState: ServerState | null;
   theme: Theme;
-  onUpdate: (settings: Settings) => void;
-  onSave: () => void;
   onClose: () => void;
 };
 
-export function SettingsModal({ visible, settings, theme, onUpdate, onSave, onClose }: Props) {
+export function SettingsModal({ visible, serverState, theme, onClose }: Props) {
   if (!visible) return null;
-
-  const input: React.CSSProperties = {
-    border: `1px solid ${theme.border}`,
-    borderRadius: 12,
-    padding: '10px 12px',
-    background: theme.bg,
-    color: theme.text,
-    fontSize: 14,
-    width: '100%',
-    outline: 'none',
-  };
 
   return (
     <div style={{
@@ -37,38 +24,31 @@ export function SettingsModal({ visible, settings, theme, onUpdate, onSave, onCl
         borderRadius: 16, padding: 18, width: '100%', maxWidth: 480,
         display: 'flex', flexDirection: 'column', gap: 12,
       }}>
-        <div style={{ fontSize: 18, fontWeight: 700, color: theme.text }}>Nextcloud WebDAV</div>
-        <input
-          placeholder="Base URL (https://cloud.example.com)"
-          value={settings.baseUrl}
-          onChange={e => onUpdate({ ...settings, baseUrl: e.target.value })}
-          style={input}
-        />
-        <input
-          placeholder="Username"
-          value={settings.username}
-          onChange={e => onUpdate({ ...settings, username: e.target.value })}
-          style={input}
-        />
-        <input
-          placeholder="App password"
-          value={settings.password}
-          onChange={e => onUpdate({ ...settings, password: e.target.value })}
-          type="password"
-          style={input}
-        />
-        <input
-          placeholder="Remote path (/remote.php/dav/files/user/.daily-tasks.json)"
-          value={settings.remotePath}
-          onChange={e => onUpdate({ ...settings, remotePath: e.target.value })}
-          style={input}
-        />
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 8 }}>
+        <div style={{ fontSize: 18, fontWeight: 700, color: theme.text }}>Local Server</div>
+        <div style={{ fontSize: 13, color: theme.muted, lineHeight: 1.5 }}>
+          The web app talks only to the local `daily-tasks web` server. Your Nextcloud
+          credentials stay on the server side and are never stored in the browser.
+        </div>
+        <div style={{ border: `1px solid ${theme.border}`, borderRadius: 12, padding: 14, background: theme.bg, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ fontSize: 13, color: theme.muted }}>Local data file</div>
+          <div style={{ fontSize: 14, color: theme.text, wordBreak: 'break-all' }}>{serverState?.data_path || 'Loading...'}</div>
+        </div>
+        <div style={{ border: `1px solid ${theme.border}`, borderRadius: 12, padding: 14, background: theme.bg, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ fontSize: 13, color: theme.muted }}>Nextcloud sync</div>
+          <div style={{ fontSize: 14, color: theme.text }}>
+            {serverState?.sync_configured ? 'Configured via DAILY_TASKS_WEBDAV_*' : 'Not configured'}
+          </div>
+          <div style={{ fontSize: 12, color: theme.muted, lineHeight: 1.45 }}>
+            To enable sync, start the server with `DAILY_TASKS_WEBDAV_URL`,
+            `DAILY_TASKS_WEBDAV_USER`, and `DAILY_TASKS_WEBDAV_PASS` set.
+          </div>
+        </div>
+        <div style={{ fontSize: 12, color: theme.muted, lineHeight: 1.45 }}>
+          Version {serverState?.version || '...'}
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
           <button onClick={onClose} style={{ border: `1px solid ${theme.border}`, borderRadius: 12, padding: '12px 16px', background: 'transparent', color: theme.text, cursor: 'pointer' }}>
             Close
-          </button>
-          <button onClick={onSave} style={{ border: 'none', borderRadius: 12, padding: '12px 16px', background: theme.accent, color: '#111111', fontWeight: 700, cursor: 'pointer' }}>
-            Save
           </button>
         </div>
       </div>

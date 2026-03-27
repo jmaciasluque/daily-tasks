@@ -228,11 +228,20 @@ func (m model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.deadlineInput.Blur()
 		return m, nil
 	case "r":
+		if !m.reloadFromDisk("") {
+			return m, nil
+		}
 		m.statusMsg = "Syncing from Nextcloud..."
 		return m, syncRemoteCmd(m.data)
 	case "p":
+		if !m.reloadFromDisk("") {
+			return m, nil
+		}
 		m.statusMsg = "Pushing to Nextcloud..."
 		return m, pushRemoteCmd(m.data)
+	case "R":
+		m.reloadFromDisk("Reloaded local data.")
+		return m, nil
 	case "t":
 		m.data.ThemeIndex = (m.data.ThemeIndex + 1) % internal.ThemeCount()
 		m.applyTheme()
@@ -517,7 +526,7 @@ func (m model) renderFooter() string {
 		return ""
 	}
 	theme := m.currentTheme()
-	help := fmt.Sprintf("a:add  e:edit  d:delete  s:skip  space:toggle  J/K:reorder  H/L:move  r:sync  p:push  t:theme (%s)  tab:switch  q:quit", theme.Name)
+	help := fmt.Sprintf("a:add  e:edit  d:delete  s:skip  space:toggle  J/K:reorder  H/L:move  R:reload  r:sync  p:push  t:theme (%s)  tab:switch  q:quit", theme.Name)
 	helpLine := lipgloss.NewStyle().
 		Foreground(lipgloss.Color(theme.Muted)).
 		Render(help)
@@ -628,6 +637,37 @@ func (m *model) ensureReset() {
 		m.syncLists()
 		_ = internal.SaveData(m.dataPath, m.data)
 	}
+}
+
+func (m *model) reloadFromDisk(successMsg string) bool {
+	indices := [3]int{
+		m.lists[0].Index(),
+		m.lists[1].Index(),
+		m.lists[2].Index(),
+	}
+
+	data, err := internal.LoadData(m.dataPath)
+	if err != nil {
+		m.statusMsg = fmt.Sprintf("Reload failed: %s", err)
+		return false
+	}
+	if internal.ResetIfNewDay(&data) {
+		if err := internal.SaveData(m.dataPath, data); err != nil {
+			m.statusMsg = fmt.Sprintf("Reload failed: %s", err)
+			return false
+		}
+	}
+
+	m.data = data
+	m.applyTheme()
+	m.syncLists()
+	for i := range m.lists {
+		m.lists[i].Select(internal.ClampIndex(indices[i], len(m.lists[i].Items())))
+	}
+	if successMsg != "" {
+		m.statusMsg = successMsg
+	}
+	return true
 }
 
 func (m *model) pushHistory() {

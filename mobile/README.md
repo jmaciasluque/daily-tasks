@@ -94,7 +94,7 @@ The data file is a JSON file with this structure:
     }
   ],
   "theme_index": 0,
-  "last_modified": 1737628800
+  "last_modified": 1737628800000
 }
 ```
 
