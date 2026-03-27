@@ -45,6 +45,7 @@ export DAILY_TASKS_PATH="$HOME/.config/daily-tasks/data.json"
 | `shift+tab` | Focus previous column |
 | `t` | Cycle through 25 colour themes |
 | `u` | Undo last change (up to 100 steps) |
+| `R` | Reload the local JSON file from disk |
 | `r` | Sync with Nextcloud (pull or push based on timestamps) |
 | `p` | Force-push local data to Nextcloud |
 | `q` / `ctrl+c` | Quit |
@@ -66,8 +67,15 @@ daily-tasks todo 3
 daily-tasks delete 3
 daily-tasks sync
 daily-tasks push
+daily-tasks web
 daily-tasks version
 ```
+
+The `web` command starts a local HTTP server, opens the browser, and serves the
+web UI from the same binary. The browser talks only to the local process; WebDAV
+sync still uses the server-side `DAILY_TASKS_WEBDAV_*` environment variables.
+Use `Refresh` in the web UI to pick up file changes that arrived through another
+client or the local Nextcloud desktop sync.
 
 ## WebDAV Sync
 
@@ -113,7 +121,7 @@ The data file is a JSON file with this structure:
     }
   ],
   "theme_index": 0,
-  "last_modified": 1737628800
+  "last_modified": 1737628800000
 }
 ```
 

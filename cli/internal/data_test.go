@@ -140,6 +140,13 @@ func TestNormalizeData(t *testing.T) {
 			t.Errorf("expected ThemeIndex=0, got %d", data.ThemeIndex)
 		}
 	})
+
+	t.Run("converts second timestamps to milliseconds", func(t *testing.T) {
+		data := NormalizeData(Data{LastModified: 1700000000})
+		if data.LastModified != 1700000000000 {
+			t.Errorf("expected LastModified to be normalized to milliseconds, got %d", data.LastModified)
+		}
+	})
 }
 
 func TestAssignMissingOrders(t *testing.T) {

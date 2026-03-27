@@ -3,15 +3,17 @@ import { useTaskData } from './hooks/useTaskData';
 import { TaskRow, TaskEditor, SettingsModal } from './components';
 import { orderedTasks } from './services/data';
 import { getTheme, isLightColor } from './theme/themes';
-import type { Task, TaskStatus, Settings } from './types';
+import type { Task, TaskStatus } from './types';
 import { appVersion } from './config/env';
 
 export default function App() {
   const {
     data,
-    settings,
+    serverState,
     statusMsg,
     syncing,
+    refreshing,
+    reloadFromDisk,
     syncFromRemote,
     addTask,
     editTask,
@@ -19,14 +21,12 @@ export default function App() {
     toggleTaskStatus,
     skipTask,
     cycleTheme,
-    updateSettings,
   } = useTaskData();
 
   const [activeStatus, setActiveStatus] = useState<TaskStatus>('todo');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
-  const [pendingSettings, setPendingSettings] = useState<Settings>(settings);
 
   const theme = useMemo(() => getTheme(data.theme_index), [data.theme_index]);
   const list = orderedTasks(data, activeStatus);
@@ -47,13 +47,6 @@ export default function App() {
 
   const handleDeleteTask = (task: Task) => {
     if (window.confirm(`Delete "${task.title}"?`)) deleteTask(task.id);
-  };
-
-  const openSettings = () => { setPendingSettings(settings); setIsSettingsOpen(true); };
-
-  const handleSaveSettings = async () => {
-    await updateSettings(pendingSettings);
-    setIsSettingsOpen(false);
   };
 
   const tabBtn = (status: TaskStatus, label: string): React.CSSProperties => ({
@@ -90,7 +83,7 @@ export default function App() {
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <button onClick={cycleTheme} style={smallBtn}>Theme</button>
-            <button onClick={openSettings} style={smallBtn}>Settings</button>
+            <button onClick={() => setIsSettingsOpen(true)} style={smallBtn}>Server</button>
           </div>
         </div>
 
@@ -130,6 +123,9 @@ export default function App() {
           <button onClick={openAdd} style={{ borderRadius: 12, padding: '12px 16px', background: theme.accent, color: isLight ? theme.text : '#111111', fontWeight: 700, border: 'none', cursor: 'pointer', fontSize: 14 }}>
             Add Task
           </button>
+          <button onClick={() => reloadFromDisk()} style={{ borderRadius: 12, padding: '12px 16px', border: `1px solid ${theme.border}`, background: 'transparent', color: theme.text, cursor: 'pointer', fontSize: 14 }}>
+            {refreshing ? 'Refreshing...' : 'Refresh'}
+          </button>
           <button onClick={() => syncFromRemote()} style={{ borderRadius: 12, padding: '12px 16px', border: `1px solid ${theme.border}`, background: 'transparent', color: theme.text, cursor: 'pointer', fontSize: 14 }}>
             {syncing ? 'Syncing...' : 'Sync'}
           </button>
@@ -137,7 +133,7 @@ export default function App() {
 
         {/* Status */}
         {statusMsg ? <div style={{ textAlign: 'center', color: theme.muted, paddingBottom: 4, fontSize: 13 }}>{statusMsg}</div> : null}
-        <div style={{ textAlign: 'center', color: theme.muted, paddingBottom: 12, fontSize: 13 }}>Version {appVersion}</div>
+        <div style={{ textAlign: 'center', color: theme.muted, paddingBottom: 12, fontSize: 13 }}>Version {serverState?.version || appVersion}</div>
       </div>
 
       <TaskEditor
@@ -149,10 +145,8 @@ export default function App() {
       />
       <SettingsModal
         visible={isSettingsOpen}
-        settings={pendingSettings}
+        serverState={serverState}
         theme={theme}
-        onUpdate={setPendingSettings}
-        onSave={handleSaveSettings}
         onClose={() => setIsSettingsOpen(false)}
       />
     </div>

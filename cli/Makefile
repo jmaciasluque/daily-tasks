@@ -1,4 +1,4 @@
-.PHONY: all build run test test-verbose clean lint fmt help
+.PHONY: all build run test test-verbose clean lint fmt help webui
 
 VERSION := $(shell cat ../VERSION 2>/dev/null || echo dev)
 LDFLAGS := -X 'daily-tasks/internal.Version=$(VERSION)'
@@ -6,12 +6,18 @@ LDFLAGS := -X 'daily-tasks/internal.Version=$(VERSION)'
 # Default target
 all: test build
 
+webui:
+	cd ../web && npm run build
+	rm -rf webui
+	mkdir -p webui
+	cp -R ../web/dist/. webui/
+
 # Build the binary
-build:
+build: webui
 	go build -ldflags "$(LDFLAGS)" -o bin/daily-tasks .
 
 # Run the application
-run:
+run: webui
 	go run -ldflags "$(LDFLAGS)" .
 
 # Run tests
@@ -65,6 +71,7 @@ help:
 	@echo "  fmt          - Format code"
 	@echo "  coverage     - Generate HTML coverage report"
 	@echo "  dev-tools    - Install development tools"
+	@echo "  webui        - Build and bundle the web UI into cli/webui"
 	@echo "  help         - Show this help message"
 	@echo ""
 	@echo "Environment variables:"

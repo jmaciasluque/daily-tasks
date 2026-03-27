@@ -63,6 +63,8 @@ func runNonTUI(args []string) (bool, error) {
 		return true, runSync(cmdArgs)
 	case "push":
 		return true, runPush(cmdArgs)
+	case "web":
+		return true, runWeb(cmdArgs)
 	default:
 		return true, fmt.Errorf("unknown command: %s", cmd)
 	}
@@ -82,6 +84,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  delete, del, rm  Delete a task")
 	fmt.Fprintln(w, "  sync             Sync with Nextcloud")
 	fmt.Fprintln(w, "  push             Force push local data")
+	fmt.Fprintln(w, "  web              Serve the local web app")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Run with --help after a command to see command options.")
 }
@@ -112,6 +115,10 @@ func printSyncUsage(w io.Writer) {
 
 func printPushUsage(w io.Writer) {
 	fmt.Fprintln(w, "Usage: daily-tasks push")
+}
+
+func printWebUsage(w io.Writer) {
+	fmt.Fprintln(w, "Usage: daily-tasks web [--listen 127.0.0.1:8421] [--open=false]")
 }
 
 func runList(args []string) error {
@@ -398,6 +405,21 @@ func runPush(args []string) error {
 	}
 	fmt.Println("Pushed local data")
 	return nil
+}
+
+func runWeb(args []string) error {
+	if wantsHelp(args) {
+		printWebUsage(os.Stdout)
+		return nil
+	}
+	fs := flag.NewFlagSet("web", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	listen := fs.String("listen", "127.0.0.1:8421", "listen address")
+	openBrowser := fs.Bool("open", true, "open the browser automatically")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	return serveWebApp(*listen, *openBrowser)
 }
 
 func loadDataAndReset() (internal.Data, string, bool, error) {

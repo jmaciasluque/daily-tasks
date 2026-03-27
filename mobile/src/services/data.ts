@@ -1,6 +1,11 @@
 import type { Data, Task, TaskStatus } from '../types';
 import { THEMES } from '../theme/themes';
 
+function normalizeLastModified(ts?: number): number {
+  if (!ts) return 0;
+  return ts > 0 && ts < 100000000000 ? ts * 1000 : ts;
+}
+
 export function todayString(): string {
   return new Date().toISOString().slice(0, 10);
 }
@@ -21,7 +26,7 @@ export function normalizeData(input: Data): Data {
     next_id: input.next_id || 1,
     tasks: Array.isArray(input.tasks) ? input.tasks : [],
     theme_index: Number.isFinite(input.theme_index) ? input.theme_index : 0,
-    last_modified: input.last_modified || 0, // Keep 0 if not set, so remote wins
+    last_modified: normalizeLastModified(input.last_modified), // Normalize old second-based timestamps
   };
   if (data.theme_index < 0 || data.theme_index >= THEMES.length) {
     data.theme_index = 0;

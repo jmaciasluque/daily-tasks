@@ -10,6 +10,34 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 
 ---
 
+## [0.2.0] - 2026-03-27
+
+### CLI
+
+#### Added
+- Added a `web` command that serves the web UI locally from the `daily-tasks`
+  binary and keeps WebDAV credentials on the server side instead of in the browser
+
+### Web
+
+#### Changed
+- Reworked the web app to use a same-origin local API for load/save/sync instead
+  of storing Nextcloud settings in the browser
+- The web UI now shows local-server status and Nextcloud sync configuration from
+  the CLI process rather than editing WebDAV credentials directly
+- Added explicit local refresh actions in the CLI (`R`) and web UI (`Refresh`)
+  so both clients can reload changes that arrived through another process or a
+  local Nextcloud sync
+
+### Shared Sync
+
+#### Fixed
+- Normalized `last_modified` timestamps to milliseconds across CLI, mobile, and
+  web clients so a newer file written by one client is no longer mistaken for
+  an older file by another during sync
+
+---
+
 ## [0.1.5] - 2026-03-26
 
 ### Mobile
@@ -105,7 +133,7 @@ on `main` before versioning was introduced.
 ## Versioning policy going forward
 
 Every pull request merged to `main` must include:
-1. A version bump in `cli/internal/version.go` (and `mobile/app.json` if the mobile app changed)
+1. A version bump in the root `VERSION` file
 2. A new entry in this file under the appropriate heading
 
 Bump guide:

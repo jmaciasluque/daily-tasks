@@ -59,6 +59,11 @@ describe('normalizeData', () => {
     expect(data.theme_index).toBe(5);
   });
 
+  it('converts second timestamps to milliseconds', () => {
+    const data = normalizeData({ last_modified: 1700000000 } as Data);
+    expect(data.last_modified).toBe(1700000000000);
+  });
+
   it('preserves deadline field on tasks', () => {
     const input: Data = {
       last_reset: '2026-01-01',

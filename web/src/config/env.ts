@@ -1,2 +1,3 @@
-export const appVersion = '0.1.5';
-export const defaultRemotePath = '/remote.php/dav/files/<username>/.daily-tasks.json';
+declare const __APP_VERSION__: string;
+
+export const appVersion = __APP_VERSION__;

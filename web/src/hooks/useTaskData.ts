@@ -1,76 +1,77 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { Data, Settings, Task, TaskStatus } from '../types';
+import type { Data, ServerState, Task, TaskStatus } from '../types';
 import { emptyData, normalizeData, resetIfNeeded, nextOrder } from '../services/data';
-import { loadSettings, saveSettings, loadCachedData, saveCachedData } from '../services/storage';
-import { isSettingsComplete, pushRemoteData, syncWithRemote, defaultSettings } from '../services/webdav';
+import { fetchServerState, saveServerData, syncServerData } from '../services/api';
 
 export function useTaskData() {
   const [data, setData] = useState<Data>(emptyData());
-  const [settings, setSettingsState] = useState<Settings>(defaultSettings);
+  const [serverState, setServerState] = useState<ServerState | null>(null);
   const [statusMsg, setStatusMsg] = useState('');
   const [syncing, setSyncing] = useState(false);
-  const [initialized, setInitialized] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    (async () => {
-      const loadedSettings = await loadSettings();
-      setSettingsState(loadedSettings);
-      const cached = await loadCachedData();
-      setData(resetIfNeeded(cached));
-      setInitialized(true);
-    })();
+  const loadState = useCallback(async (successMessage?: string) => {
+    try {
+      const state = await fetchServerState();
+      setData(resetIfNeeded(normalizeData(state.data)));
+      setServerState(state);
+      setStatusMsg(
+        successMessage || (
+          state.sync_configured
+            ? 'Connected to the local Daily Tasks server.'
+            : 'Connected to the local server. Nextcloud sync is not configured.'
+        ),
+      );
+    } catch (err) {
+      setStatusMsg(`Load error: ${(err as Error).message}`);
+    }
   }, []);
 
   useEffect(() => {
-    if (initialized) {
-      saveCachedData(data);
-    }
-  }, [data, initialized]);
+    void loadState();
+  }, [loadState]);
 
-  useEffect(() => {
-    if (initialized && isSettingsComplete(settings)) {
-      syncFromRemote();
+  const persistData = useCallback(async (next: Data) => {
+    try {
+      const state = await saveServerData(next);
+      setData(resetIfNeeded(normalizeData(state.data)));
+      setServerState(state);
+      setStatusMsg(state.message || 'Saved locally.');
+    } catch (err) {
+      setStatusMsg(`Save error: ${(err as Error).message}`);
     }
-  }, [initialized, settings.baseUrl, settings.username, settings.password, settings.remotePath]);
+  }, []);
 
-  const syncFromRemote = useCallback(async (overrideSettings?: Settings) => {
-    const activeSettings = overrideSettings ?? settings;
-    if (!isSettingsComplete(activeSettings)) {
-      setStatusMsg('Configure WebDAV settings first.');
-      return;
-    }
+  const updateData = useCallback((updater: (prev: Data) => Data) => {
+    setData((prev) => {
+      const next = resetIfNeeded(normalizeData(updater(prev)));
+      void persistData(next);
+      return next;
+    });
+  }, [persistData]);
+
+  const syncFromRemote = useCallback(async () => {
     setSyncing(true);
     try {
-      const result = await syncWithRemote(activeSettings, data);
-      if (result.action !== 'error') {
-        setData(resetIfNeeded(normalizeData(result.data)));
-      }
-      setStatusMsg(result.message);
+      const state = await syncServerData();
+      setData(resetIfNeeded(normalizeData(state.data)));
+      setServerState(state);
+      setStatusMsg(state.message || 'Sync complete.');
     } catch (err) {
       setStatusMsg(`Sync error: ${(err as Error).message}`);
     } finally {
       setSyncing(false);
     }
-  }, [settings, data]);
+  }, []);
 
-  const pushToRemote = useCallback(async (dataToSave: Data) => {
-    if (!isSettingsComplete(settings)) return;
+  const reloadFromDisk = useCallback(async () => {
+    setRefreshing(true);
     try {
-      await pushRemoteData(settings, dataToSave);
-      setStatusMsg('Saved to Nextcloud.');
-    } catch (err) {
-      setStatusMsg(`Save error: ${(err as Error).message}`);
+      await loadState('Reloaded local data.');
+    } finally {
+      setRefreshing(false);
     }
-  }, [settings]);
-
-  const updateData = useCallback((updater: (prev: Data) => Data) => {
-    setData((prev) => {
-      const next = resetIfNeeded(normalizeData(updater(prev)));
-      next.last_modified = Date.now();
-      pushToRemote(next);
-      return next;
-    });
-  }, [pushToRemote]);
+  }, [loadState]);
 
   const addTask = useCallback((title: string, duration: number, deadline?: string) => {
     updateData((prev) => {
@@ -122,19 +123,13 @@ export function useTaskData() {
     updateData((prev) => ({ ...prev, theme_index: (prev.theme_index + 1) % 25 }));
   }, [updateData]);
 
-  const updateSettings = useCallback(async (newSettings: Settings) => {
-    setSettingsState(newSettings);
-    await saveSettings(newSettings);
-    if (isSettingsComplete(newSettings)) {
-      await syncFromRemote(newSettings);
-    }
-  }, [syncFromRemote]);
-
   return {
     data,
-    settings,
+    serverState,
     statusMsg,
     syncing,
+    refreshing,
+    reloadFromDisk,
     syncFromRemote,
     addTask,
     editTask,
@@ -142,6 +137,5 @@ export function useTaskData() {
     toggleTaskStatus,
     skipTask,
     cycleTheme,
-    updateSettings,
   };
 }

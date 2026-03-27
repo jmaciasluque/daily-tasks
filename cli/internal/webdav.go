@@ -57,7 +57,7 @@ func FetchRemoteData(settings WebDAVSettings) (Data, error) {
 
 // PushRemoteData pushes the data to the remote WebDAV server
 func PushRemoteData(settings WebDAVSettings, data Data) error {
-	data.LastModified = time.Now().Unix()
+	data.LastModified = time.Now().UnixMilli()
 	body, err := json.MarshalIndent(data, "", "  ")
 	if err != nil {
 		return err
@@ -106,6 +106,7 @@ func SyncWithRemote(settings WebDAVSettings, local Data) SyncResult {
 	}
 
 	remote = NormalizeData(remote)
+	local = NormalizeData(local)
 
 	// Never overwrite remote tasks with an empty local state (e.g. fresh install)
 	if len(local.Tasks) == 0 && len(remote.Tasks) > 0 {
