@@ -60,6 +60,42 @@ async function saveNotificationIds(ids: Record<number, string>): Promise<void> {
   } catch {}
 }
 
+function parseTaskId(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === 'string') {
+    const parsed = Number.parseInt(value, 10);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+  return undefined;
+}
+
+async function resolveTaskId(response: Notifications.NotificationResponse): Promise<number | undefined> {
+  const directTaskId = parseTaskId(response.notification.request.content.data?.taskId);
+  if (directTaskId !== undefined) {
+    return directTaskId;
+  }
+
+  // Android can drop content.data for local scheduled notifications, so fall
+  // back to the scheduled notification identifier we already persist.
+  const requestId = response.notification.request.identifier;
+  if (!requestId) {
+    return undefined;
+  }
+
+  const ids = await loadNotificationIds();
+  for (const [taskId, notificationId] of Object.entries(ids)) {
+    if (notificationId === requestId) {
+      return parseTaskId(taskId);
+    }
+  }
+
+  return undefined;
+}
+
 export async function cancelTaskNotification(taskId: number): Promise<void> {
   const ids = await loadNotificationIds();
   const notifId = ids[taskId];
@@ -122,10 +158,9 @@ export async function handleNotificationAction(
   response: Notifications.NotificationResponse,
 ): Promise<boolean> {
   const { actionIdentifier, notification } = response;
-  const taskId = notification.request.content.data?.taskId as number | undefined;
-
-  if (!taskId) return false;
   if (actionIdentifier !== 'skip' && actionIdentifier !== 'done') return false;
+  const taskId = await resolveTaskId(response);
+  if (taskId === undefined) return false;
 
   const cached = await loadCachedData();
   const task = cached.tasks.find(t => t.id === taskId);
@@ -146,6 +181,9 @@ export async function handleNotificationAction(
   };
 
   await saveCachedData(updatedData);
+  try {
+    await Notifications.dismissNotificationAsync(notification.request.identifier);
+  } catch {}
   await cancelTaskNotification(taskId);
   return true;
 }

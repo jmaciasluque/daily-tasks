@@ -9,6 +9,7 @@ jest.mock('expo-notifications', () => ({
   cancelAllScheduledNotificationsAsync: jest.fn().mockResolvedValue(undefined),
   scheduleNotificationAsync: jest.fn().mockResolvedValue('mock-notif-id'),
   cancelScheduledNotificationAsync: jest.fn().mockResolvedValue(undefined),
+  dismissNotificationAsync: jest.fn().mockResolvedValue(undefined),
   SchedulableTriggerInputTypes: { DAILY: 'daily' },
 }));
 
@@ -42,16 +43,22 @@ const mockSchedule = Notifications.scheduleNotificationAsync as jest.Mock;
 const mockCancelAll = Notifications.cancelAllScheduledNotificationsAsync as jest.Mock;
 const mockGetPerms = Notifications.getPermissionsAsync as jest.Mock;
 const mockRequestPerms = Notifications.requestPermissionsAsync as jest.Mock;
+const mockDismiss = Notifications.dismissNotificationAsync as jest.Mock;
 
 function makeData(tasks: Task[]): Data {
   return { last_reset: '2026-01-01', next_id: 10, tasks, theme_index: 0, last_modified: 0 };
 }
 
-function makeResponse(actionIdentifier: string, taskId?: number): Notifications.NotificationResponse {
+function makeResponse(
+  actionIdentifier: string,
+  taskId?: number | string,
+  identifier = 'mock-notif-id',
+): Notifications.NotificationResponse {
   return {
     actionIdentifier,
     notification: {
       request: {
+        identifier,
         content: {
           data: taskId !== undefined ? { taskId } : {},
         },
@@ -134,6 +141,35 @@ describe('handleNotificationAction', () => {
     expect(task.status).toBe('done');
   });
 
+  it('coerces string task ids from notification data', async () => {
+    mockLoadCachedData.mockResolvedValue(makeData([
+      { id: 1, title: 'Morning run', duration: 30, status: 'todo', order: 1 },
+    ]));
+
+    const result = await handleNotificationAction(makeResponse('done', '1'));
+
+    expect(result).toBe(true);
+    const saved: Data = mockSaveCachedData.mock.calls[0][0];
+    const task = saved.tasks.find(t => t.id === 1)!;
+    expect(task.status).toBe('done');
+  });
+
+  it('falls back to the notification identifier when notification data is missing', async () => {
+    mockLoadCachedData.mockResolvedValue(makeData([
+      { id: 1, title: 'Morning run', duration: 30, status: 'todo', order: 1 },
+    ]));
+    (AsyncStorage.getItem as jest.Mock).mockResolvedValue(JSON.stringify({ 1: 'android-delivered-id' }));
+
+    const result = await handleNotificationAction(
+      makeResponse('skip', undefined, 'android-delivered-id'),
+    );
+
+    expect(result).toBe(true);
+    const saved: Data = mockSaveCachedData.mock.calls[0][0];
+    const task = saved.tasks.find(t => t.id === 1)!;
+    expect(task.status).toBe('skipped');
+  });
+
   it('assigns order as max-existing-status-order + 1 when skipping', async () => {
     // Two tasks already in 'skipped' at orders 1 and 3
     mockLoadCachedData.mockResolvedValue(makeData([
@@ -185,6 +221,16 @@ describe('handleNotificationAction', () => {
 
     const saved: Data = mockSaveCachedData.mock.calls[0][0];
     expect(saved.last_modified).toBeGreaterThanOrEqual(before);
+  });
+
+  it('dismisses the delivered notification after applying an action', async () => {
+    mockLoadCachedData.mockResolvedValue(makeData([
+      { id: 1, title: 'A', duration: 5, status: 'todo', order: 1 },
+    ]));
+
+    await handleNotificationAction(makeResponse('done', 1, 'delivered-id'));
+
+    expect(mockDismiss).toHaveBeenCalledWith('delivered-id');
   });
 });
 

@@ -187,6 +187,7 @@ export function useTaskData() {
     settings,
     statusMsg,
     syncing,
+    initialized,
     syncFromRemote,
     reloadFromCache,
     addTask,

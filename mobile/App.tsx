@@ -32,6 +32,7 @@ export default function App() {
     settings,
     statusMsg,
     syncing,
+    initialized,
     syncFromRemote,
     reloadFromCache,
     addTask,
@@ -55,27 +56,38 @@ export default function App() {
   const list = orderedTasks(data, activeStatus);
   const statusBarStyle = isLightColor(theme.bg) ? 'dark' : 'light';
 
-  // Request notification permissions and set up action handlers
   useEffect(() => {
     setupNotifications();
+  }, []);
+
+  // Register notification response handlers after the initial cache load so a
+  // cold-start action cannot be overwritten by stale startup state.
+  useEffect(() => {
+    if (!initialized) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const applyNotificationResponse = async (response: Notifications.NotificationResponse) => {
+      const changed = await handleNotificationAction(response);
+      if (changed && !cancelled) {
+        await reloadFromCache();
+      }
+    };
 
     // Pick up any notification response that arrived before the listener
     // was registered (e.g. app was killed and relaunched via a button tap)
     Notifications.getLastNotificationResponseAsync().then(async (response) => {
-      if (response) {
-        const changed = await handleNotificationAction(response);
-        if (changed) await reloadFromCache();
+      if (response && !cancelled) {
+        await applyNotificationResponse(response);
       }
     });
 
     // Handle notification actions (Skip / Mark Done) — fired when user interacts
     // with a notification, whether the app is in foreground or background
     const responseSub = Notifications.addNotificationResponseReceivedListener(async (response) => {
-      const changed = await handleNotificationAction(response);
-      if (changed) {
-        // Reload React state from storage after the background update
-        await reloadFromCache();
-      }
+      await applyNotificationResponse(response);
     });
 
     // When app returns to foreground, reload in case a notification action
@@ -87,10 +99,11 @@ export default function App() {
     });
 
     return () => {
+      cancelled = true;
       responseSub.remove();
       appStateSub.remove();
     };
-  }, [reloadFromCache]);
+  }, [initialized, reloadFromCache]);
 
   useEffect(() => {
     const checkUpdates = async () => {

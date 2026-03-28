@@ -10,6 +10,22 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 
 ---
 
+## [0.2.1] - 2026-03-28
+
+### Mobile
+
+#### Fixed
+- Notification action buttons now resolve the target task reliably even when
+  Android delivers the notification response without `content.data`, by falling
+  back to the stored scheduled notification identifier
+- Cold-start notification actions now wait until cached task data has finished
+  loading before they are applied, preventing the app's startup hydration from
+  overwriting a valid Mark Done or Skip action
+- Acting on a notification now explicitly dismisses the delivered notification
+  after the task state is updated
+
+---
+
 ## [0.2.0] - 2026-03-27
 
 ### CLI
