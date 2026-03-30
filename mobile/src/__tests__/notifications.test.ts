@@ -38,12 +38,21 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
 // Mock storage service so tests control what "cached" data looks like
 jest.mock('../services/storage', () => ({
   loadCachedData: jest.fn(),
-  loadSettings: jest.fn().mockResolvedValue({
+  loadAppConfig: jest.fn().mockResolvedValue({}),
+  nextcloudSettingsFromConfig: jest.fn((config: {
+    nextcloud?: {
+      baseUrl?: string;
+      username?: string;
+      password?: string;
+      remotePath?: string;
+    };
+  }) => ({
     baseUrl: '',
     username: '',
     password: '',
     remotePath: '',
-  }),
+    ...(config.nextcloud ?? {}),
+  })),
   saveCachedData: jest.fn().mockResolvedValue(undefined),
 }));
 
@@ -60,7 +69,7 @@ jest.mock('../services/webdav', () => ({
 import * as Notifications from 'expo-notifications';
 import * as TaskManager from 'expo-task-manager';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { loadCachedData, loadSettings, saveCachedData } from '../services/storage';
+import { loadAppConfig, loadCachedData, saveCachedData } from '../services/storage';
 import { pushRemoteData } from '../services/webdav';
 import {
   setupNotifications,
@@ -75,7 +84,7 @@ import { BACKGROUND_NOTIFICATION_TASK } from '../services/notificationTasks';
 import type { Data, Task } from '../types';
 
 const mockLoadCachedData = loadCachedData as jest.MockedFunction<typeof loadCachedData>;
-const mockLoadSettings = loadSettings as jest.MockedFunction<typeof loadSettings>;
+const mockLoadAppConfig = loadAppConfig as jest.MockedFunction<typeof loadAppConfig>;
 const mockSaveCachedData = saveCachedData as jest.MockedFunction<typeof saveCachedData>;
 const mockPushRemoteData = pushRemoteData as jest.Mock;
 const mockSchedule = Notifications.scheduleNotificationAsync as jest.Mock;
@@ -120,12 +129,7 @@ describe('handleNotificationAction', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     (AsyncStorage.getItem as jest.Mock).mockResolvedValue(null);
-    mockLoadSettings.mockResolvedValue({
-      baseUrl: '',
-      username: '',
-      password: '',
-      remotePath: '',
-    });
+    mockLoadAppConfig.mockResolvedValue({});
   });
 
   it('returns false when taskId is absent from notification data', async () => {
@@ -261,11 +265,14 @@ describe('handleNotificationAction', () => {
     mockLoadCachedData.mockResolvedValue(makeData([
       { id: 1, title: 'A', duration: 5, status: 'todo', order: 1 },
     ]));
-    mockLoadSettings.mockResolvedValue({
-      baseUrl: 'https://cloud.example.com',
-      username: 'user',
-      password: 'pass',
-      remotePath: '/remote.php/dav/files/user/.daily-tasks.json',
+    mockLoadAppConfig.mockResolvedValue({
+      backend: 'nextcloud',
+      nextcloud: {
+        baseUrl: 'https://cloud.example.com',
+        username: 'user',
+        password: 'pass',
+        remotePath: '/remote.php/dav/files/user/.daily-tasks.json',
+      },
     });
 
     await handleNotificationAction(makeResponse('done', 1));
@@ -279,11 +286,14 @@ describe('handleNotificationAction', () => {
     mockLoadCachedData.mockResolvedValue(makeData([
       { id: 1, title: 'A', duration: 5, status: 'todo', order: 1 },
     ]));
-    mockLoadSettings.mockResolvedValue({
-      baseUrl: 'https://cloud.example.com',
-      username: 'user',
-      password: 'pass',
-      remotePath: '/remote.php/dav/files/user/.daily-tasks.json',
+    mockLoadAppConfig.mockResolvedValue({
+      backend: 'nextcloud',
+      nextcloud: {
+        baseUrl: 'https://cloud.example.com',
+        username: 'user',
+        password: 'pass',
+        remotePath: '/remote.php/dav/files/user/.daily-tasks.json',
+      },
     });
     mockPushRemoteData.mockRejectedValueOnce(new Error('network down'));
 

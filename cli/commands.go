@@ -48,21 +48,47 @@ func runNonTUI(args []string) (bool, error) {
 
 	switch cmd {
 	case "list", "ls":
+		if err := requireConfiguredBackend(); err != nil {
+			return true, err
+		}
 		return true, runList(cmdArgs)
 	case "add":
+		if err := requireConfiguredBackend(); err != nil {
+			return true, err
+		}
 		return true, runAdd(cmdArgs)
 	case "done":
+		if err := requireConfiguredBackend(); err != nil {
+			return true, err
+		}
 		return true, runMove(cmdArgs, "done")
 	case "todo":
+		if err := requireConfiguredBackend(); err != nil {
+			return true, err
+		}
 		return true, runMove(cmdArgs, "todo")
 	case "skip":
+		if err := requireConfiguredBackend(); err != nil {
+			return true, err
+		}
 		return true, runSkip(cmdArgs)
 	case "delete", "del", "rm":
+		if err := requireConfiguredBackend(); err != nil {
+			return true, err
+		}
 		return true, runDelete(cmdArgs)
 	case "sync":
+		if err := requireConfiguredBackend(); err != nil {
+			return true, err
+		}
 		return true, runSync(cmdArgs)
 	case "push":
+		if err := requireConfiguredBackend(); err != nil {
+			return true, err
+		}
 		return true, runPush(cmdArgs)
+	case "setup":
+		return true, runSetup(cmdArgs)
 	case "web":
 		return true, runWeb(cmdArgs)
 	default:
@@ -84,6 +110,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  delete, del, rm  Delete a task")
 	fmt.Fprintln(w, "  sync             Sync with Nextcloud")
 	fmt.Fprintln(w, "  push             Force push local data")
+	fmt.Fprintln(w, "  setup            Choose backend and connect Nextcloud")
 	fmt.Fprintln(w, "  web              Serve the local web app")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Run with --help after a command to see command options.")
@@ -119,6 +146,10 @@ func printPushUsage(w io.Writer) {
 
 func printWebUsage(w io.Writer) {
 	fmt.Fprintln(w, "Usage: daily-tasks web [--listen 127.0.0.1:8421] [--open=false]")
+}
+
+func printSetupUsage(w io.Writer) {
+	fmt.Fprintln(w, "Usage: daily-tasks setup")
 }
 
 func runList(args []string) error {
@@ -420,6 +451,17 @@ func runWeb(args []string) error {
 		return err
 	}
 	return serveWebApp(*listen, *openBrowser)
+}
+
+func runSetup(args []string) error {
+	if wantsHelp(args) {
+		printSetupUsage(os.Stdout)
+		return nil
+	}
+	if len(args) > 0 {
+		return errors.New("setup does not take any arguments")
+	}
+	return runInteractiveSetup(os.Stdin, os.Stdout)
 }
 
 func loadDataAndReset() (internal.Data, string, bool, error) {

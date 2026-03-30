@@ -23,3 +23,10 @@ export type Settings = {
   password: string;
   remotePath: string;
 };
+
+export type BackendType = 'local' | 'nextcloud';
+
+export type AppConfig = {
+  backend?: BackendType;
+  nextcloud?: Settings;
+};

@@ -67,19 +67,39 @@ daily-tasks todo 3
 daily-tasks delete 3
 daily-tasks sync
 daily-tasks push
+daily-tasks setup
 daily-tasks web
 daily-tasks version
 ```
 
 The `web` command starts a local HTTP server, opens the browser, and serves the
-web UI from the same binary. The browser talks only to the local process; WebDAV
-sync still uses the server-side `DAILY_TASKS_WEBDAV_*` environment variables.
-Use `Refresh` in the web UI to pick up file changes that arrived through another
-client or the local Nextcloud desktop sync.
+web UI from the same binary. The browser talks only to the local process, and
+backend setup now happens there too on first launch. Use `Refresh` in the web UI
+to pick up file changes that arrived through another client or the local
+Nextcloud desktop sync.
 
-## WebDAV Sync
+## Backend Setup
 
-To sync with Nextcloud via WebDAV, set these environment variables:
+The CLI now blocks first use until you choose a backend:
+
+```bash
+daily-tasks setup
+```
+
+You can pick:
+- `Local only`
+- `Nextcloud` via Nextcloud Login Flow v2 in your browser
+
+The persisted backend config is stored at:
+
+```bash
+$HOME/.config/daily-tasks/config.json
+```
+
+### Legacy WebDAV Environment Variables
+
+Existing `DAILY_TASKS_WEBDAV_*` environment variables still work as a fallback
+for compatibility:
 
 ```bash
 export DAILY_TASKS_WEBDAV_URL="https://cloud.example.com/remote.php/dav/files/your-username/.daily-tasks.json"
@@ -87,7 +107,7 @@ export DAILY_TASKS_WEBDAV_USER="your-username"
 export DAILY_TASKS_WEBDAV_PASS="app-password"
 ```
 
-Then:
+Then you can:
 - Press `r` to sync (pulls if remote is newer, pushes if local is newer)
 - Press `p` to force push local changes
 

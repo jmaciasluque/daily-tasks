@@ -2,7 +2,7 @@ jest.mock('../config/env', () => ({
   defaultRemotePath: '/remote.php/dav/files/<username>/.daily-tasks.json',
 }));
 
-import { syncWithRemote } from '../services/webdav';
+import { pollNextcloudLogin, startNextcloudLogin, syncWithRemote } from '../services/webdav';
 import type { Data, Settings } from '../types';
 
 const settings: Settings = {
@@ -59,5 +59,100 @@ describe('syncWithRemote', () => {
     expect(result.action).toBe('pulled');
     expect(result.data.tasks[0].title).toBe('CLI newer task');
     expect(result.data.last_modified).toBe(1700001000000);
+  });
+});
+
+describe('Nextcloud login flow', () => {
+  const originalFetch = global.fetch;
+
+  afterEach(() => {
+    Object.defineProperty(global, 'fetch', {
+      configurable: true,
+      writable: true,
+      value: originalFetch,
+    });
+    jest.restoreAllMocks();
+  });
+
+  it('starts login flow v2 and returns the browser URL plus poll metadata', async () => {
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        poll: {
+          token: 'poll-token',
+          endpoint: 'https://cloud.example.com/login/v2/poll',
+        },
+        login: 'https://cloud.example.com/login/v2/flow/token',
+      }),
+    } as any);
+
+    Object.defineProperty(global, 'fetch', {
+      configurable: true,
+      writable: true,
+      value: fetchMock,
+    });
+
+    const session = await startNextcloudLogin('https://cloud.example.com/');
+
+    expect(fetchMock).toHaveBeenCalledWith('https://cloud.example.com/index.php/login/v2', {
+      method: 'POST',
+    });
+    expect(session.serverUrl).toBe('https://cloud.example.com');
+    expect(session.pollToken).toBe('poll-token');
+  });
+
+  it('returns null while the login flow is still pending', async () => {
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 404,
+    } as any);
+
+    Object.defineProperty(global, 'fetch', {
+      configurable: true,
+      writable: true,
+      value: fetchMock,
+    });
+
+    const result = await pollNextcloudLogin({
+      serverUrl: 'https://cloud.example.com',
+      loginUrl: 'https://cloud.example.com/login/v2/flow/token',
+      pollEndpoint: 'https://cloud.example.com/login/v2/poll',
+      pollToken: 'poll-token',
+    });
+
+    expect(result).toBeNull();
+  });
+
+  it('returns WebDAV settings once the login flow completes', async () => {
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        server: 'https://cloud.example.com/',
+        loginName: 'user',
+        appPassword: 'app-pass',
+      }),
+    } as any);
+
+    Object.defineProperty(global, 'fetch', {
+      configurable: true,
+      writable: true,
+      value: fetchMock,
+    });
+
+    const result = await pollNextcloudLogin({
+      serverUrl: 'https://cloud.example.com',
+      loginUrl: 'https://cloud.example.com/login/v2/flow/token',
+      pollEndpoint: 'https://cloud.example.com/login/v2/poll',
+      pollToken: 'poll-token',
+    });
+
+    expect(result).toEqual({
+      baseUrl: 'https://cloud.example.com',
+      username: 'user',
+      password: 'app-pass',
+      remotePath: '/remote.php/dav/files/user/.daily-tasks.json',
+    });
   });
 });

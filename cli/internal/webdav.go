@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 )
@@ -18,15 +17,29 @@ type WebDAVSettings struct {
 	Pass string
 }
 
-// LoadWebDAVSettings loads WebDAV configuration from environment variables
-func LoadWebDAVSettings() (WebDAVSettings, error) {
-	url := strings.TrimSpace(os.Getenv("DAILY_TASKS_WEBDAV_URL"))
-	user := os.Getenv("DAILY_TASKS_WEBDAV_USER")
-	pass := os.Getenv("DAILY_TASKS_WEBDAV_PASS")
-	if url == "" || user == "" || pass == "" {
-		return WebDAVSettings{}, errors.New("set DAILY_TASKS_WEBDAV_URL, DAILY_TASKS_WEBDAV_USER, DAILY_TASKS_WEBDAV_PASS")
+func buildWebDAVURL(cfg NextcloudConfig) string {
+	base := strings.TrimRight(cfg.ServerURL, "/")
+	path := cfg.RemotePath
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
 	}
-	return WebDAVSettings{URL: url, User: user, Pass: pass}, nil
+	return base + path
+}
+
+// LoadWebDAVSettings loads WebDAV configuration from the persisted backend config.
+func LoadWebDAVSettings() (WebDAVSettings, error) {
+	cfg, _, err := LoadEffectiveAppConfig()
+	if err != nil {
+		return WebDAVSettings{}, err
+	}
+	if cfg.Backend != BackendNextcloud || !nextcloudConfigComplete(cfg.Nextcloud) {
+		return WebDAVSettings{}, ErrNextcloudNotConfigured
+	}
+	return WebDAVSettings{
+		URL:  buildWebDAVURL(cfg.Nextcloud),
+		User: cfg.Nextcloud.LoginName,
+		Pass: cfg.Nextcloud.AppPassword,
+	}, nil
 }
 
 // FetchRemoteData fetches the data from the remote WebDAV server
@@ -132,5 +145,5 @@ func SyncWithRemote(settings WebDAVSettings, local Data) SyncResult {
 // HasWebDAVConfig returns true if WebDAV is configured
 func HasWebDAVConfig() bool {
 	_, err := LoadWebDAVSettings()
-	return err == nil
+	return err == nil && !errors.Is(err, ErrNextcloudNotConfigured)
 }

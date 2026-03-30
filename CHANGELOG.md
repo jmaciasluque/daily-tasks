@@ -10,6 +10,44 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 
 ---
 
+## [0.3.0] - 2026-03-30
+
+### Shared Config
+
+#### Added
+- Added a shared `config.schema.json` backend configuration model for `local`
+  and `nextcloud` client setups
+- Added Nextcloud Login Flow v2 support so clients can authorize in the browser
+  and receive a per-client app password instead of manually entering account
+  credentials
+
+### CLI
+
+#### Added
+- Added a blocking first-run setup flow and a new `daily-tasks setup` command
+  to choose a backend and connect Nextcloud when desired
+
+#### Changed
+- CLI and local web sync now read persisted backend config first, while keeping
+  the legacy `DAILY_TASKS_WEBDAV_*` environment variables as a compatibility
+  fallback
+
+### Web
+
+#### Added
+- The local web app now serves a setup screen until a backend is chosen and can
+  complete the Nextcloud login flow directly from the browser
+
+### Mobile
+
+#### Changed
+- Replaced the manual Nextcloud credential form with first-run backend gating
+  and a browser-based Nextcloud connect flow
+- Mobile now migrates legacy manually entered WebDAV settings into the shared
+  backend config schema on first load
+
+---
+
 ## [0.2.2] - 2026-03-28
 
 ### Mobile
