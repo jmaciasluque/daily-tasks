@@ -31,7 +31,6 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
   immediately after **Mark Done** or **Skip for Today** succeeds
 
 ---
-
 ## [0.2.1] - 2026-03-27
 
 ### CI
