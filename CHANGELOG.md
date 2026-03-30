@@ -10,6 +10,27 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 
 ---
 
+## [0.2.2] - 2026-03-28
+
+### Mobile
+
+#### Fixed
+- Android notification actions now run through an Expo background notification
+  task so **Mark Done** and **Skip for Today** can update tasks directly from
+  the notification without foregrounding the app
+- Notification action updates now persist to local cache and push to Nextcloud,
+  so action-button changes are no longer lost on the next app sync or cold
+  launch
+- The mobile app now creates its Android notification channel explicitly and
+  includes a `Test Notif` action in the UI to trigger an immediate local
+  notification for end-to-end verification
+- Upgraded the mobile app to the Expo 54-compatible `expo-notifications`
+  package and added `expo-task-manager` support required for background action
+  handling
+- Android notification action taps now dismiss the delivered notification
+  immediately after **Mark Done** or **Skip for Today** succeeds
+
+---
 ## [0.2.1] - 2026-03-27
 
 ### CI

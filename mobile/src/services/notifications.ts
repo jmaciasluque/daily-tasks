@@ -1,19 +1,37 @@
 import * as Notifications from 'expo-notifications';
+import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { Task } from '../types';
-import { loadCachedData, saveCachedData } from './storage';
+import { handleNotificationAction as applyNotificationAction } from './notificationActionHandler';
+import { registerNotificationTaskAsync } from './notificationTasks';
 
 const NOTIFICATION_IDS_KEY = 'dailyTasksNotificationIds';
 const TASK_CATEGORY_ID = 'task-deadline';
+const NOTIFICATION_CHANNEL_ID = 'default';
 
 // Configure how notifications are displayed when the app is in the foreground
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
     shouldPlaySound: true,
     shouldSetBadge: false,
   }),
 });
+
+async function ensureNotificationChannelAsync(): Promise<void> {
+  if (Platform.OS !== 'android') {
+    return;
+  }
+
+  await Notifications.setNotificationChannelAsync(NOTIFICATION_CHANNEL_ID, {
+    name: 'Daily Tasks',
+    importance: Notifications.AndroidImportance.HIGH,
+    sound: 'default',
+    vibrationPattern: [0, 250, 250, 250],
+  });
+}
 
 /**
  * Request notification permissions and set up action categories.
@@ -21,19 +39,27 @@ Notifications.setNotificationHandler({
  */
 export async function setupNotifications(): Promise<boolean> {
   try {
+    await ensureNotificationChannelAsync();
+
     // Set up "Mark Done" and "Skip for Today" action buttons on notifications
     await Notifications.setNotificationCategoryAsync(TASK_CATEGORY_ID, [
       {
         identifier: 'done',
         buttonTitle: 'Mark Done',
-        options: { opensAppToForeground: true },
+        options: { opensAppToForeground: Platform.OS !== 'android' },
       },
       {
         identifier: 'skip',
         buttonTitle: 'Skip for Today',
-        options: { opensAppToForeground: true },
+        options: { opensAppToForeground: Platform.OS !== 'android' },
       },
     ]);
+
+    try {
+      await registerNotificationTaskAsync();
+    } catch {
+      // Background notification actions are best-effort in unsupported runtimes.
+    }
 
     const { status: existing } = await Notifications.getPermissionsAsync();
     if (existing === 'granted') return true;
@@ -79,6 +105,7 @@ export async function cancelTaskNotification(taskId: number): Promise<void> {
  */
 export async function rescheduleAllNotifications(tasks: Task[]): Promise<void> {
   try {
+    await ensureNotificationChannelAsync();
     await Notifications.cancelAllScheduledNotificationsAsync();
     await saveNotificationIds({});
 
@@ -102,6 +129,7 @@ export async function rescheduleAllNotifications(tasks: Task[]): Promise<void> {
           type: Notifications.SchedulableTriggerInputTypes.DAILY,
           hour,
           minute,
+          channelId: NOTIFICATION_CHANNEL_ID,
         },
       });
       newIds[task.id] = notifId;
@@ -113,39 +141,28 @@ export async function rescheduleAllNotifications(tasks: Task[]): Promise<void> {
   }
 }
 
-/**
- * Handle a notification action (Skip / Mark Done) directly via storage.
- * This works even when the app is not fully active.
- * Returns true if the data was changed and the caller should reload state.
- */
 export async function handleNotificationAction(
   response: Notifications.NotificationResponse,
 ): Promise<boolean> {
-  const { actionIdentifier, notification } = response;
-  const taskId = notification.request.content.data?.taskId as number | undefined;
+  return applyNotificationAction(response);
+}
 
-  if (!taskId) return false;
-  if (actionIdentifier !== 'skip' && actionIdentifier !== 'done') return false;
+export async function scheduleTestNotification(task: Task): Promise<void> {
+  await ensureNotificationChannelAsync();
 
-  const cached = await loadCachedData();
-  const task = cached.tasks.find(t => t.id === taskId);
-  if (!task || task.status !== 'todo') return false;
-
-  const newStatus = actionIdentifier === 'done' ? 'done' : 'skipped';
-  let maxOrder = 0;
-  cached.tasks.forEach(t => {
-    if (t.status === newStatus) maxOrder = Math.max(maxOrder, t.order);
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title: `${task.title} (test)`,
+      body: 'Testing notification actions: Mark Done / Skip for Today.',
+      data: { taskId: task.id },
+      categoryIdentifier: TASK_CATEGORY_ID,
+      sound: 'default',
+    },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+      seconds: 3,
+      repeats: false,
+      channelId: NOTIFICATION_CHANNEL_ID,
+    },
   });
-
-  const updatedData = {
-    ...cached,
-    tasks: cached.tasks.map(t =>
-      t.id === taskId ? { ...t, status: newStatus as 'done' | 'skipped', order: maxOrder + 1 } : t
-    ),
-    last_modified: Date.now(),
-  };
-
-  await saveCachedData(updatedData);
-  await cancelTaskNotification(taskId);
-  return true;
 }
