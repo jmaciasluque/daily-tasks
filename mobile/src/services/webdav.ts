@@ -47,7 +47,7 @@ export async function pushRemoteData(settings: Settings, data: Data): Promise<vo
   const url = buildWebdavUrl(settings);
   const dataWithTimestamp = {
     ...data,
-    last_modified: Date.now(),
+    last_modified: data.last_modified || Date.now(),
   };
   const res = await fetch(url, {
     method: 'PUT',

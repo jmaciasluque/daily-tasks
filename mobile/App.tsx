@@ -18,7 +18,7 @@ import DraggableFlatList from 'react-native-draggable-flatlist';
 import { TaskRow, TaskEditor, SettingsModal } from './src/components';
 import { useTaskData } from './src/hooks/useTaskData';
 import { orderedTasks } from './src/services/data';
-import { setupNotifications, handleNotificationAction } from './src/services/notifications';
+import { setupNotifications, handleNotificationAction, scheduleTestNotification } from './src/services/notifications';
 import { getTheme, isLightColor } from './src/theme/themes';
 import type { Task, TaskStatus, Settings } from './src/types';
 import { appVariant, appVersionSuffix, appVersion, commitHash } from './src/config/env';
@@ -57,25 +57,31 @@ export default function App() {
 
   // Request notification permissions and set up action handlers
   useEffect(() => {
+    const consumeNotificationResponse = async (response: Notifications.NotificationResponse) => {
+      const changed = await handleNotificationAction(response);
+      if (changed) {
+        await reloadFromCache();
+      }
+
+      if (response.actionIdentifier === 'skip' || response.actionIdentifier === 'done') {
+        await Notifications.clearLastNotificationResponseAsync().catch(() => {});
+      }
+    };
+
     setupNotifications();
 
     // Pick up any notification response that arrived before the listener
     // was registered (e.g. app was killed and relaunched via a button tap)
     Notifications.getLastNotificationResponseAsync().then(async (response) => {
       if (response) {
-        const changed = await handleNotificationAction(response);
-        if (changed) await reloadFromCache();
+        await consumeNotificationResponse(response);
       }
     });
 
     // Handle notification actions (Skip / Mark Done) — fired when user interacts
     // with a notification, whether the app is in foreground or background
     const responseSub = Notifications.addNotificationResponseReceivedListener(async (response) => {
-      const changed = await handleNotificationAction(response);
-      if (changed) {
-        // Reload React state from storage after the background update
-        await reloadFromCache();
-      }
+      await consumeNotificationResponse(response);
     });
 
     // When app returns to foreground, reload in case a notification action
@@ -139,6 +145,30 @@ export default function App() {
         onPress: () => deleteTask(task.id),
       },
     ]);
+  };
+
+  const handleTestNotification = async () => {
+    const task = orderedTasks(data, 'todo')[0];
+    if (!task) {
+      Alert.alert('No todo task', 'Add or reopen a todo task first.');
+      return;
+    }
+
+    const granted = await setupNotifications();
+    if (!granted) {
+      Alert.alert('Notifications disabled', 'Allow notifications for Daily Tasks first.');
+      return;
+    }
+
+    try {
+      await scheduleTestNotification(task);
+      Alert.alert(
+        'Test notification scheduled',
+        `A test notification for "${task.title}" will appear in a few seconds.`,
+      );
+    } catch (err) {
+      Alert.alert('Notification error', (err as Error).message);
+    }
   };
 
   const openSettings = () => {
@@ -259,10 +289,13 @@ export default function App() {
 
         {/* Footer */}
         <View style={styles.footer}>
-          <Pressable onPress={openAdd} style={[styles.primaryButton, { backgroundColor: theme.accent }]}>
+          <Pressable onPress={openAdd} style={[styles.primaryButton, styles.footerButton, { backgroundColor: theme.accent }]}>
             <Text style={styles.primaryButtonText}>Add Task</Text>
           </Pressable>
-          <Pressable onPress={() => syncFromRemote()} style={[styles.secondaryButton, { borderColor: theme.border }]}>
+          <Pressable onPress={handleTestNotification} style={[styles.secondaryButton, styles.footerButton, { borderColor: theme.border }]}>
+            <Text style={{ color: theme.text }}>Test Notif</Text>
+          </Pressable>
+          <Pressable onPress={() => syncFromRemote()} style={[styles.secondaryButton, styles.footerButton, { borderColor: theme.border }]}>
             <Text style={{ color: theme.text }}>{syncing ? 'Syncing...' : 'Sync'}</Text>
           </Pressable>
         </View>
@@ -373,6 +406,10 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingHorizontal: 18,
     paddingBottom: 8,
+  },
+  footerButton: {
+    flex: 1,
+    alignItems: 'center',
   },
   primaryButton: {
     borderRadius: 12,

@@ -53,7 +53,8 @@ export function useTaskData() {
 
     setSyncing(true);
     try {
-      const result = await syncWithRemote(activeSettings, data);
+      const latestLocal = await loadCachedData();
+      const result = await syncWithRemote(activeSettings, latestLocal);
       if (result.action !== 'error') {
         const normalized = resetIfNeeded(normalizeData(result.data));
         setData(normalized);
@@ -64,7 +65,7 @@ export function useTaskData() {
     } finally {
       setSyncing(false);
     }
-  }, [settings, data]);
+  }, [settings]);
 
   const pushToRemote = useCallback(async (dataToSave: Data) => {
     if (!isSettingsComplete(settings)) {
