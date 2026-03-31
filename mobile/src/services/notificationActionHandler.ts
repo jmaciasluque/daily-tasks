@@ -1,7 +1,7 @@
 import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { Data } from '../types';
-import { loadCachedData, loadSettings, saveCachedData } from './storage';
+import { loadAppConfig, loadCachedData, nextcloudSettingsFromConfig, saveCachedData } from './storage';
 import { isSettingsComplete, pushRemoteData } from './webdav';
 
 const NOTIFICATION_IDS_KEY = 'dailyTasksNotificationIds';
@@ -47,8 +47,9 @@ function applyNotificationAction(
 }
 
 export async function syncNotificationActionUpdate(data: Data): Promise<void> {
-  const settings = await loadSettings();
-  if (!isSettingsComplete(settings)) {
+  const config = await loadAppConfig();
+  const settings = nextcloudSettingsFromConfig(config);
+  if (config.backend !== 'nextcloud' || !isSettingsComplete(settings)) {
     return;
   }
 

@@ -14,7 +14,9 @@ import (
 
 func testWebServer(dataPath string) *webServer {
 	return &webServer{
-		dataPath: dataPath,
+		dataPath:   dataPath,
+		configPath: dataPath + ".config.json",
+		loginFlows: map[string]internal.LoginFlowV2Session{},
 		staticFS: fstest.MapFS{
 			"index.html": &fstest.MapFile{Data: []byte("<!doctype html><html></html>")},
 		},
@@ -25,6 +27,10 @@ func TestWebServerStateAndSave(t *testing.T) {
 	tempDir := t.TempDir()
 	dataPath := tempDir + "/tasks.json"
 	server := testWebServer(dataPath)
+	t.Setenv("DAILY_TASKS_CONFIG", server.configPath)
+	if err := internal.SaveAppConfig(server.configPath, internal.AppConfig{Backend: internal.BackendLocal}); err != nil {
+		t.Fatalf("failed to seed config: %v", err)
+	}
 
 	stateReq := httptest.NewRequest(http.MethodGet, "/api/state", nil)
 	stateRes := httptest.NewRecorder()
@@ -90,26 +96,23 @@ func TestWebServerStateAndSave(t *testing.T) {
 }
 
 func TestWebServerSyncRequiresConfig(t *testing.T) {
-	t.Setenv("DAILY_TASKS_WEBDAV_URL", "")
-	t.Setenv("DAILY_TASKS_WEBDAV_USER", "")
-	t.Setenv("DAILY_TASKS_WEBDAV_PASS", "")
-
 	tempDir := t.TempDir()
 	server := testWebServer(tempDir + "/tasks.json")
+	t.Setenv("DAILY_TASKS_CONFIG", server.configPath)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/sync", nil)
 	res := httptest.NewRecorder()
 	server.routes().ServeHTTP(res, req)
 
-	if res.Code != http.StatusBadRequest {
-		t.Fatalf("expected POST /api/sync status 400, got %d", res.Code)
+	if res.Code != http.StatusConflict {
+		t.Fatalf("expected POST /api/sync status 409, got %d", res.Code)
 	}
 
 	var payload webErrorResponse
 	if err := json.Unmarshal(res.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("failed to decode error response: %v", err)
 	}
-	if !strings.Contains(payload.Error, "not configured") {
+	if !strings.Contains(payload.Error, "setup") {
 		t.Fatalf("expected not configured error, got %q", payload.Error)
 	}
 }

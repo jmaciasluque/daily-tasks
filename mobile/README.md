@@ -36,16 +36,16 @@ mobile/
 └── jest.config.js
 ```
 
-## WebDAV Setup
+## Backend Setup
 
-Create an app password in Nextcloud, then enter these in **Settings**:
+On first launch, the app now blocks usage until you choose a backend:
 
-- Base URL: `https://cloud.example.com`
-- Username: `your-username`
-- App password: (generated in Nextcloud)
-- Remote path: `/remote.php/dav/files/your-username/.daily-tasks.json`
+- `Local only`
+- `Nextcloud`
 
-The app will create the file if it doesn't exist, and will sync on launch and on edits.
+For Nextcloud, enter only the server URL and continue in the browser. The app
+uses Nextcloud Login Flow v2 to obtain a per-device app password, then stores
+the resulting backend config locally and syncs automatically.
 
 ## Sync Behavior
 

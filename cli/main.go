@@ -82,6 +82,11 @@ func main() {
 		return
 	}
 
+	if err := ensureConfiguredBackendInteractive(); err != nil {
+		fmt.Println("Error:", err)
+		os.Exit(1)
+	}
+
 	dataPath, err := internal.DefaultDataPath()
 	if err != nil {
 		fmt.Println("Error finding data path:", err)

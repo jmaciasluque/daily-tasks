@@ -1,23 +1,25 @@
-import { useCallback, useEffect, useState } from 'react';
-import type { Data, Settings, Task, TaskStatus } from '../types';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { AppConfig, Data, Settings, Task, TaskStatus } from '../types';
 import { emptyData, normalizeData, resetIfNeeded, nextOrder } from '../services/data';
-import { loadSettings, saveSettings, loadCachedData, saveCachedData } from '../services/storage';
-import { isSettingsComplete, pushRemoteData, syncWithRemote, defaultSettings } from '../services/webdav';
+import { loadAppConfig, saveAppConfig, loadCachedData, saveCachedData, nextcloudSettingsFromConfig } from '../services/storage';
+import { isSettingsComplete, pushRemoteData, syncWithRemote } from '../services/webdav';
 import { rescheduleAllNotifications } from '../services/notifications';
 import { appVariant } from '../config/env';
 
 export function useTaskData() {
   const [data, setData] = useState<Data>(emptyData());
-  const [settings, setSettingsState] = useState<Settings>(defaultSettings);
+  const [config, setConfigState] = useState<AppConfig>({});
   const [statusMsg, setStatusMsg] = useState('');
   const [syncing, setSyncing] = useState(false);
   const [initialized, setInitialized] = useState(false);
 
-  // Load settings and cached data on mount
+  const settings = useMemo(() => nextcloudSettingsFromConfig(config), [config]);
+  const nextcloudConfigured = config.backend === 'nextcloud' && isSettingsComplete(settings);
+
   useEffect(() => {
     (async () => {
-      const loadedSettings = await loadSettings();
-      setSettingsState(loadedSettings);
+      const loadedConfig = await loadAppConfig();
+      setConfigState(loadedConfig);
 
       const cached = await loadCachedData();
       setData(resetIfNeeded(cached));
@@ -29,7 +31,6 @@ export function useTaskData() {
     })();
   }, [appVariant]);
 
-  // Save data to cache and reschedule notifications whenever data changes
   useEffect(() => {
     if (initialized) {
       saveCachedData(data);
@@ -37,17 +38,10 @@ export function useTaskData() {
     }
   }, [data, initialized]);
 
-  // Sync when settings are complete and initialized
-  useEffect(() => {
-    if (initialized && isSettingsComplete(settings)) {
-      syncFromRemote();
-    }
-  }, [initialized, settings.baseUrl, settings.username, settings.password, settings.remotePath]);
-
   const syncFromRemote = useCallback(async (overrideSettings?: Settings) => {
     const activeSettings = overrideSettings ?? settings;
-    if (!isSettingsComplete(activeSettings)) {
-      setStatusMsg('Configure WebDAV settings first.');
+    if (config.backend !== 'nextcloud' || !isSettingsComplete(activeSettings)) {
+      setStatusMsg(config.backend === 'local' ? 'Using local-only backend.' : 'Connect Nextcloud first.');
       return;
     }
 
@@ -65,19 +59,26 @@ export function useTaskData() {
     } finally {
       setSyncing(false);
     }
-  }, [settings]);
+  }, [config.backend, settings]);
+
+  useEffect(() => {
+    if (initialized && nextcloudConfigured) {
+      syncFromRemote();
+    }
+  }, [initialized, nextcloudConfigured, settings.baseUrl, settings.username, settings.password, settings.remotePath, syncFromRemote]);
 
   const pushToRemote = useCallback(async (dataToSave: Data) => {
-    if (!isSettingsComplete(settings)) {
+    if (!nextcloudConfigured) {
       return;
     }
+
     try {
       await pushRemoteData(settings, dataToSave);
       setStatusMsg('Saved to Nextcloud.');
     } catch (err) {
       setStatusMsg(`Save error: ${(err as Error).message}`);
     }
-  }, [settings]);
+  }, [nextcloudConfigured, settings]);
 
   const updateData = useCallback((updater: (prev: Data) => Data) => {
     setData((prev) => {
@@ -88,10 +89,6 @@ export function useTaskData() {
     });
   }, [pushToRemote]);
 
-  /**
-   * Reload task data from the local cache.
-   * Call this after a notification action has updated storage in the background.
-   */
   const reloadFromCache = useCallback(async () => {
     const cached = await loadCachedData();
     setData(resetIfNeeded(cached));
@@ -130,7 +127,6 @@ export function useTaskData() {
 
   const toggleTaskStatus = useCallback((task: Task) => {
     updateData((prev) => {
-      // todo → done, done → todo, skipped → todo
       const newStatus: TaskStatus = task.status === 'todo' ? 'done' : 'todo';
       const order = nextOrder(prev, newStatus);
       return {
@@ -174,18 +170,31 @@ export function useTaskData() {
     }));
   }, [updateData]);
 
-  const updateSettings = useCallback(async (newSettings: Settings) => {
-    setSettingsState(newSettings);
-    await saveSettings(newSettings);
-    // Force a sync right after updating settings to pull remote before any local push
-    if (isSettingsComplete(newSettings)) {
-      await syncFromRemote(newSettings);
+  const chooseLocalBackend = useCallback(async () => {
+    const nextConfig: AppConfig = { backend: 'local' };
+    setConfigState(nextConfig);
+    await saveAppConfig(nextConfig);
+    setStatusMsg('Using local-only backend.');
+  }, []);
+
+  const saveNextcloudSettings = useCallback(async (nextcloud: Settings) => {
+    const nextConfig: AppConfig = {
+      backend: 'nextcloud',
+      nextcloud,
+    };
+    setConfigState(nextConfig);
+    await saveAppConfig(nextConfig);
+    if (isSettingsComplete(nextcloud)) {
+      await syncFromRemote(nextcloud);
     }
   }, [syncFromRemote]);
 
   return {
     data,
+    config,
     settings,
+    backendConfigured: !!config.backend,
+    nextcloudConfigured,
     statusMsg,
     syncing,
     syncFromRemote,
@@ -197,6 +206,7 @@ export function useTaskData() {
     skipTask,
     reorderTasks,
     cycleTheme,
-    updateSettings,
+    chooseLocalBackend,
+    saveNextcloudSettings,
   };
 }

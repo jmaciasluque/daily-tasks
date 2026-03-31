@@ -5,7 +5,7 @@ This file mirrors GitHub issues for agent-friendly scanning. Use issues for disc
 ## Core architecture
 - [ ] #5 Define multi-backend interface and sync contract (labels: backend, architecture)
 - [ ] #6 Add backend registry + configuration schema (labels: backend, configuration)
-- [ ] #7 Persist backend selection across clients (labels: backend, configuration, ui)
+- [x] #7 Persist backend selection across clients (labels: backend, configuration, ui)
 - [ ] #12 Event replay/aggregation for current state (labels: backend, architecture, dml)
 - [ ] #13 Define multi-backend conflict/merge policy (labels: backend, architecture)
 
@@ -32,6 +32,7 @@ This file mirrors GitHub issues for agent-friendly scanning. Use issues for disc
 ### Web
 - [ ] #21 Web app scaffold with local backend (labels: web, ui, backend)
 - [ ] #22 Web: backend selection UI (labels: web, ui, configuration)
+- [ ] #59 QR-based Nextcloud config transfer across clients (labels: cli, mobile, web, configuration)
 
 ## Docs & tests
 - [ ] #23 Update schema/docs + migrations guide (labels: documentation, backend, configuration)

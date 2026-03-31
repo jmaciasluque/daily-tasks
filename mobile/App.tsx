@@ -6,9 +6,11 @@ import {
   Alert,
   AppState,
   FlatList,
+  Linking,
   Pressable,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
@@ -19,8 +21,9 @@ import { TaskRow, TaskEditor, SettingsModal } from './src/components';
 import { useTaskData } from './src/hooks/useTaskData';
 import { orderedTasks } from './src/services/data';
 import { setupNotifications, handleNotificationAction, scheduleTestNotification } from './src/services/notifications';
+import { pollNextcloudLogin, startNextcloudLogin, type LoginFlowSession } from './src/services/webdav';
 import { getTheme, isLightColor } from './src/theme/themes';
-import type { Task, TaskStatus, Settings } from './src/types';
+import type { Task, TaskStatus } from './src/types';
 import { appVariant, appVersionSuffix, appVersion, commitHash } from './src/config/env';
 
 const updateId = Updates.updateId ? Updates.updateId.slice(0, 7) : 'bundled';
@@ -29,7 +32,10 @@ const updateChannel = Updates.channel ?? 'local';
 export default function App() {
   const {
     data,
+    config,
     settings,
+    backendConfigured,
+    nextcloudConfigured,
     statusMsg,
     syncing,
     syncFromRemote,
@@ -41,21 +47,29 @@ export default function App() {
     skipTask,
     reorderTasks,
     cycleTheme,
-    updateSettings,
+    chooseLocalBackend,
+    saveNextcloudSettings,
   } = useTaskData();
 
   const [activeStatus, setActiveStatus] = useState<TaskStatus>('todo');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
-  const [pendingSettings, setPendingSettings] = useState<Settings>(settings);
   const [updateReady, setUpdateReady] = useState(false);
+  const [serverUrlInput, setServerUrlInput] = useState('');
+  const [loginSession, setLoginSession] = useState<LoginFlowSession | null>(null);
+  const [backendBusy, setBackendBusy] = useState(false);
 
   const theme = useMemo(() => getTheme(data.theme_index), [data.theme_index]);
   const list = orderedTasks(data, activeStatus);
   const statusBarStyle = isLightColor(theme.bg) ? 'dark' : 'light';
 
-  // Request notification permissions and set up action handlers
+  useEffect(() => {
+    if (!serverUrlInput && settings.baseUrl) {
+      setServerUrlInput(settings.baseUrl);
+    }
+  }, [serverUrlInput, settings.baseUrl]);
+
   useEffect(() => {
     const consumeNotificationResponse = async (response: Notifications.NotificationResponse) => {
       const changed = await handleNotificationAction(response);
@@ -70,22 +84,16 @@ export default function App() {
 
     setupNotifications();
 
-    // Pick up any notification response that arrived before the listener
-    // was registered (e.g. app was killed and relaunched via a button tap)
     Notifications.getLastNotificationResponseAsync().then(async (response) => {
       if (response) {
         await consumeNotificationResponse(response);
       }
     });
 
-    // Handle notification actions (Skip / Mark Done) — fired when user interacts
-    // with a notification, whether the app is in foreground or background
     const responseSub = Notifications.addNotificationResponseReceivedListener(async (response) => {
       await consumeNotificationResponse(response);
     });
 
-    // When app returns to foreground, reload in case a notification action
-    // ran while the app was backgrounded
     const appStateSub = AppState.addEventListener('change', async (nextState) => {
       if (nextState === 'active') {
         await reloadFromCache();
@@ -116,6 +124,71 @@ export default function App() {
 
     checkUpdates();
   }, []);
+
+  const handleChooseLocalBackend = useCallback(async () => {
+    setBackendBusy(true);
+    try {
+      setLoginSession(null);
+      await chooseLocalBackend();
+      setIsSettingsOpen(false);
+    } finally {
+      setBackendBusy(false);
+    }
+  }, [chooseLocalBackend]);
+
+  const handleStartNextcloudLogin = useCallback(async () => {
+    const serverUrl = serverUrlInput.trim() || settings.baseUrl;
+    if (!serverUrl) {
+      Alert.alert('Server URL required', 'Enter your Nextcloud server URL first.');
+      return;
+    }
+
+    setBackendBusy(true);
+    try {
+      const session = await startNextcloudLogin(serverUrl);
+      setLoginSession(session);
+      setServerUrlInput(session.serverUrl);
+      await Linking.openURL(session.loginUrl);
+    } catch (err) {
+      Alert.alert('Connection error', (err as Error).message);
+    } finally {
+      setBackendBusy(false);
+    }
+  }, [serverUrlInput, settings.baseUrl]);
+
+  const handleOpenPendingLogin = useCallback(async () => {
+    if (!loginSession) {
+      return;
+    }
+    await Linking.openURL(loginSession.loginUrl).catch(() => {});
+  }, [loginSession]);
+
+  const handleFinishNextcloudLogin = useCallback(async () => {
+    if (!loginSession) {
+      return;
+    }
+
+    setBackendBusy(true);
+    try {
+      const nextcloudSettings = await pollNextcloudLogin(loginSession);
+      if (!nextcloudSettings) {
+        Alert.alert(
+          'Still waiting',
+          'Finish the approval in Nextcloud first, then come back here and try again.',
+        );
+        return;
+      }
+
+      await saveNextcloudSettings(nextcloudSettings);
+      setLoginSession(null);
+      setServerUrlInput(nextcloudSettings.baseUrl);
+      setIsSettingsOpen(false);
+    } catch (err) {
+      Alert.alert('Connection error', (err as Error).message);
+    } finally {
+      setBackendBusy(false);
+    }
+  }, [loginSession, saveNextcloudSettings]);
 
   const openAdd = () => {
     setEditingTask(null);
@@ -172,176 +245,240 @@ export default function App() {
   };
 
   const openSettings = () => {
-    setPendingSettings(settings);
+    setServerUrlInput(settings.baseUrl);
     setIsSettingsOpen(true);
-  };
-
-  const handleSaveSettings = async () => {
-    await updateSettings(pendingSettings);
-    setIsSettingsOpen(false);
-    syncFromRemote();
   };
 
   const todoCount = data.tasks.filter(t => t.status === 'todo').length;
   const doneCount = data.tasks.filter(t => t.status === 'done').length;
   const skippedCount = data.tasks.filter(t => t.status === 'skipped').length;
 
+  const renderSetupScreen = () => (
+    <View style={styles.setupScreen}>
+      <View style={[styles.setupCard, { backgroundColor: theme.panelBg, borderColor: theme.border }]}>
+        <Text style={[styles.title, { color: theme.text }]}>Choose a Backend</Text>
+        <Text style={[styles.subtitle, { color: theme.muted }]}>
+          Daily Tasks now blocks first use until you choose how this installation should store and sync data.
+        </Text>
+
+        <Pressable
+          onPress={handleChooseLocalBackend}
+          style={[styles.secondaryButton, { borderColor: theme.border, opacity: backendBusy ? 0.7 : 1 }]}
+          disabled={backendBusy}
+        >
+          <Text style={{ color: theme.text }}>Use Local Only</Text>
+        </Pressable>
+
+        <Text style={[styles.setupLabel, { color: theme.muted }]}>Connect Nextcloud</Text>
+        <TextInput
+          placeholder="https://cloud.example.com"
+          placeholderTextColor={theme.muted}
+          value={serverUrlInput}
+          onChangeText={setServerUrlInput}
+          autoCapitalize="none"
+          keyboardType="url"
+          style={[styles.input, { color: theme.text, borderColor: theme.border }]}
+        />
+        {!loginSession ? (
+          <Pressable
+            onPress={handleStartNextcloudLogin}
+            style={[styles.primaryButton, { backgroundColor: theme.accent, opacity: backendBusy ? 0.7 : 1 }]}
+            disabled={backendBusy}
+          >
+            <Text style={styles.primaryButtonText}>Connect Nextcloud</Text>
+          </Pressable>
+        ) : (
+          <View style={styles.setupActions}>
+            <Pressable onPress={handleOpenPendingLogin} style={[styles.secondaryButton, { borderColor: theme.border }]}>
+              <Text style={{ color: theme.text }}>Open Nextcloud</Text>
+            </Pressable>
+            <Pressable
+              onPress={handleFinishNextcloudLogin}
+              style={[styles.primaryButton, { backgroundColor: theme.accent, opacity: backendBusy ? 0.7 : 1 }]}
+              disabled={backendBusy}
+            >
+              <Text style={styles.primaryButtonText}>Finish Connection</Text>
+            </Pressable>
+          </View>
+        )}
+
+        {statusMsg ? <Text style={[styles.setupStatus, { color: theme.muted }]}>{statusMsg}</Text> : null}
+      </View>
+    </View>
+  );
+
   return (
     <GestureHandlerRootView style={styles.gestureRoot}>
-    <SafeAreaProvider>
-      <SafeAreaView style={[styles.root, { backgroundColor: theme.bg }]} edges={['top', 'bottom']}>
-        <StatusBar style={statusBarStyle} />
+      <SafeAreaProvider>
+        <SafeAreaView style={[styles.root, { backgroundColor: theme.bg }]} edges={['top', 'bottom']}>
+          <StatusBar style={statusBarStyle} />
 
-        {/* Header */}
-        <View style={[styles.header, { borderBottomColor: theme.border }]}>
-          <View>
-            <Text style={[styles.title, { color: theme.text }]}>Daily Tasks</Text>
-            <Text style={[styles.subtitle, { color: theme.muted }]}>
-              Theme: {theme.name}
-            </Text>
-          </View>
-          <View style={styles.headerActions}>
-            <Pressable onPress={cycleTheme} style={[styles.smallButton, { borderColor: theme.border }]}>
-              <Text style={{ color: theme.text }}>Theme</Text>
-            </Pressable>
-            <Pressable onPress={openSettings} style={[styles.smallButton, { borderColor: theme.border }]}>
-              <Text style={{ color: theme.text }}>Settings</Text>
-            </Pressable>
-          </View>
-        </View>
-
-        {/* Status Switcher */}
-        <View style={styles.switcher}>
-          <Pressable
-            onPress={() => setActiveStatus('todo')}
-            style={[
-              styles.switchButton,
-              { backgroundColor: activeStatus === 'todo' ? theme.focusBg : theme.panelBg, borderColor: theme.border },
-            ]}
-          >
-            <Text style={{ color: theme.text, fontWeight: '600' }}>To Do ({todoCount})</Text>
-          </Pressable>
-          <Pressable
-            onPress={() => setActiveStatus('done')}
-            style={[
-              styles.switchButton,
-              { backgroundColor: activeStatus === 'done' ? theme.focusBg : theme.panelBg, borderColor: theme.border },
-            ]}
-          >
-            <Text style={{ color: theme.text, fontWeight: '600' }}>Done ({doneCount})</Text>
-          </Pressable>
-          <Pressable
-            onPress={() => setActiveStatus('skipped')}
-            style={[
-              styles.switchButton,
-              { backgroundColor: activeStatus === 'skipped' ? theme.focusBg : theme.panelBg, borderColor: theme.border },
-            ]}
-          >
-            <Text style={{ color: theme.muted, fontWeight: '600' }}>Skipped ({skippedCount})</Text>
-          </Pressable>
-        </View>
-
-        {/* Task List */}
-        <View style={[styles.panel, { backgroundColor: theme.panelBg, borderColor: theme.border }]}>
-          {activeStatus === 'todo' ? (
-            <DraggableFlatList
-              data={list}
-              keyExtractor={(item) => String(item.id)}
-              contentContainerStyle={styles.listContent}
-              onDragEnd={({ data }) => reorderTasks(data)}
-              renderItem={({ item, drag, isActive }) => (
-                <TaskRow
-                  task={item}
-                  theme={theme}
-                  drag={drag}
-                  isActive={isActive}
-                  onToggle={() => toggleTaskStatus(item)}
-                  onSkip={() => skipTask(item.id)}
-                  onEdit={() => openEdit(item)}
-                  onDelete={() => handleDeleteTask(item)}
-                />
-              )}
-              ListEmptyComponent={
-                <Text style={[styles.emptyText, { color: theme.muted }]}>No tasks.</Text>
-              }
-            />
+          {!backendConfigured ? (
+            renderSetupScreen()
           ) : (
-            <FlatList
-              data={list}
-              keyExtractor={(item) => String(item.id)}
-              contentContainerStyle={styles.listContent}
-              renderItem={({ item }) => (
-                <TaskRow
-                  task={item}
-                  theme={theme}
-                  onToggle={() => toggleTaskStatus(item)}
-                  onSkip={() => skipTask(item.id)}
-                  onEdit={() => openEdit(item)}
-                  onDelete={() => handleDeleteTask(item)}
-                />
-              )}
-              ListEmptyComponent={
-                <Text style={[styles.emptyText, { color: theme.muted }]}>No tasks.</Text>
-              }
-            />
+            <>
+              <View style={[styles.header, { borderBottomColor: theme.border }]}>
+                <View>
+                  <Text style={[styles.title, { color: theme.text }]}>Daily Tasks</Text>
+                  <Text style={[styles.subtitle, { color: theme.muted }]}>
+                    Theme: {theme.name}
+                  </Text>
+                </View>
+                <View style={styles.headerActions}>
+                  <Pressable onPress={cycleTheme} style={[styles.smallButton, { borderColor: theme.border }]}>
+                    <Text style={{ color: theme.text }}>Theme</Text>
+                  </Pressable>
+                  <Pressable onPress={openSettings} style={[styles.smallButton, { borderColor: theme.border }]}>
+                    <Text style={{ color: theme.text }}>Backend</Text>
+                  </Pressable>
+                </View>
+              </View>
+
+              <View style={styles.switcher}>
+                <Pressable
+                  onPress={() => setActiveStatus('todo')}
+                  style={[
+                    styles.switchButton,
+                    { backgroundColor: activeStatus === 'todo' ? theme.focusBg : theme.panelBg, borderColor: theme.border },
+                  ]}
+                >
+                  <Text style={{ color: theme.text, fontWeight: '600' }}>To Do ({todoCount})</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => setActiveStatus('done')}
+                  style={[
+                    styles.switchButton,
+                    { backgroundColor: activeStatus === 'done' ? theme.focusBg : theme.panelBg, borderColor: theme.border },
+                  ]}
+                >
+                  <Text style={{ color: theme.text, fontWeight: '600' }}>Done ({doneCount})</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => setActiveStatus('skipped')}
+                  style={[
+                    styles.switchButton,
+                    { backgroundColor: activeStatus === 'skipped' ? theme.focusBg : theme.panelBg, borderColor: theme.border },
+                  ]}
+                >
+                  <Text style={{ color: theme.muted, fontWeight: '600' }}>Skipped ({skippedCount})</Text>
+                </Pressable>
+              </View>
+
+              <View style={[styles.panel, { backgroundColor: theme.panelBg, borderColor: theme.border }]}>
+                {activeStatus === 'todo' ? (
+                  <DraggableFlatList
+                    data={list}
+                    keyExtractor={(item) => String(item.id)}
+                    contentContainerStyle={styles.listContent}
+                    onDragEnd={({ data }) => reorderTasks(data)}
+                    renderItem={({ item, drag, isActive }) => (
+                      <TaskRow
+                        task={item}
+                        theme={theme}
+                        drag={drag}
+                        isActive={isActive}
+                        onToggle={() => toggleTaskStatus(item)}
+                        onSkip={() => skipTask(item.id)}
+                        onEdit={() => openEdit(item)}
+                        onDelete={() => handleDeleteTask(item)}
+                      />
+                    )}
+                    ListEmptyComponent={
+                      <Text style={[styles.emptyText, { color: theme.muted }]}>No tasks.</Text>
+                    }
+                  />
+                ) : (
+                  <FlatList
+                    data={list}
+                    keyExtractor={(item) => String(item.id)}
+                    contentContainerStyle={styles.listContent}
+                    renderItem={({ item }) => (
+                      <TaskRow
+                        task={item}
+                        theme={theme}
+                        onToggle={() => toggleTaskStatus(item)}
+                        onSkip={() => skipTask(item.id)}
+                        onEdit={() => openEdit(item)}
+                        onDelete={() => handleDeleteTask(item)}
+                      />
+                    )}
+                    ListEmptyComponent={
+                      <Text style={[styles.emptyText, { color: theme.muted }]}>No tasks.</Text>
+                    }
+                  />
+                )}
+              </View>
+
+              <View style={styles.footer}>
+                <Pressable onPress={openAdd} style={[styles.primaryButton, styles.footerButton, { backgroundColor: theme.accent }]}>
+                  <Text style={styles.primaryButtonText}>Add Task</Text>
+                </Pressable>
+                <Pressable onPress={handleTestNotification} style={[styles.secondaryButton, styles.footerButton, { borderColor: theme.border }]}>
+                  <Text style={{ color: theme.text }}>Test Notif</Text>
+                </Pressable>
+                {nextcloudConfigured ? (
+                  <Pressable onPress={() => syncFromRemote()} style={[styles.secondaryButton, styles.footerButton, { borderColor: theme.border }]}>
+                    <Text style={{ color: theme.text }}>{syncing ? 'Syncing...' : 'Sync'}</Text>
+                  </Pressable>
+                ) : (
+                  <View style={[styles.secondaryButton, styles.footerButton, { borderColor: theme.border }]}>
+                    <Text style={{ color: theme.muted }}>Local Only</Text>
+                  </View>
+                )}
+              </View>
+
+              <Text style={[styles.status, { color: theme.muted }]}>
+                Backend: {config.backend === 'nextcloud' ? 'Nextcloud' : 'Local only'}
+              </Text>
+              {statusMsg ? <Text style={[styles.status, { color: theme.muted }]}>{statusMsg}</Text> : null}
+              <Text style={[styles.status, { color: theme.muted }]}>
+                Version {appVersion}{appVariant !== 'production' && appVersionSuffix ? `-${appVersionSuffix.slice(0, 7)}` : ''}
+              </Text>
+              {commitHash ? (
+                <Text style={[styles.status, { color: theme.muted }]}>Commit {commitHash.slice(0, 7)}</Text>
+              ) : null}
+              <Text style={[styles.status, { color: theme.muted }]}>Update {updateId} · {updateChannel}</Text>
+              {appVariant !== 'production' ? (
+                <Text style={[styles.status, { color: theme.muted }]}>Test build</Text>
+              ) : null}
+              {updateReady ? (
+                <View style={styles.updateBanner}>
+                  <Text style={[styles.status, { color: theme.muted }]}>Update available</Text>
+                  <Pressable
+                    onPress={() => Updates.reloadAsync()}
+                    style={[styles.smallButton, { borderColor: theme.border }]}
+                  >
+                    <Text style={{ color: theme.text }}>Restart</Text>
+                  </Pressable>
+                </View>
+              ) : null}
+
+              <TaskEditor
+                visible={isEditorOpen}
+                task={editingTask}
+                theme={theme}
+                onSave={handleSaveTask}
+                onClose={() => setIsEditorOpen(false)}
+              />
+
+              <SettingsModal
+                visible={isSettingsOpen}
+                config={config}
+                serverUrl={serverUrlInput}
+                busy={backendBusy}
+                loginPending={!!loginSession}
+                theme={theme}
+                onChangeServerUrl={setServerUrlInput}
+                onUseLocal={handleChooseLocalBackend}
+                onStartNextcloud={handleStartNextcloudLogin}
+                onOpenNextcloud={handleOpenPendingLogin}
+                onFinishNextcloud={handleFinishNextcloudLogin}
+                onClose={() => setIsSettingsOpen(false)}
+              />
+            </>
           )}
-        </View>
-
-        {/* Footer */}
-        <View style={styles.footer}>
-          <Pressable onPress={openAdd} style={[styles.primaryButton, styles.footerButton, { backgroundColor: theme.accent }]}>
-            <Text style={styles.primaryButtonText}>Add Task</Text>
-          </Pressable>
-          <Pressable onPress={handleTestNotification} style={[styles.secondaryButton, styles.footerButton, { borderColor: theme.border }]}>
-            <Text style={{ color: theme.text }}>Test Notif</Text>
-          </Pressable>
-          <Pressable onPress={() => syncFromRemote()} style={[styles.secondaryButton, styles.footerButton, { borderColor: theme.border }]}>
-            <Text style={{ color: theme.text }}>{syncing ? 'Syncing...' : 'Sync'}</Text>
-          </Pressable>
-        </View>
-
-        {statusMsg ? <Text style={[styles.status, { color: theme.muted }]}>{statusMsg}</Text> : null}
-        <Text style={[styles.status, { color: theme.muted }]}>
-          Version {appVersion}{appVariant !== 'production' && appVersionSuffix ? `-${appVersionSuffix.slice(0, 7)}` : ''}
-        </Text>
-        {commitHash ? (
-          <Text style={[styles.status, { color: theme.muted }]}>Commit {commitHash.slice(0, 7)}</Text>
-        ) : null}
-        <Text style={[styles.status, { color: theme.muted }]}>Update {updateId} · {updateChannel}</Text>
-        {appVariant !== 'production' ? (
-          <Text style={[styles.status, { color: theme.muted }]}>Test build</Text>
-        ) : null}
-        {updateReady ? (
-          <View style={styles.updateBanner}>
-            <Text style={[styles.status, { color: theme.muted }]}>Update available</Text>
-            <Pressable
-              onPress={() => Updates.reloadAsync()}
-              style={[styles.smallButton, { borderColor: theme.border }]}
-            >
-              <Text style={{ color: theme.text }}>Restart</Text>
-            </Pressable>
-          </View>
-        ) : null}
-
-        {/* Modals */}
-        <TaskEditor
-          visible={isEditorOpen}
-          task={editingTask}
-          theme={theme}
-          onSave={handleSaveTask}
-          onClose={() => setIsEditorOpen(false)}
-        />
-
-        <SettingsModal
-          visible={isSettingsOpen}
-          settings={pendingSettings}
-          theme={theme}
-          onUpdate={setPendingSettings}
-          onSave={handleSaveSettings}
-          onClose={() => setIsSettingsOpen(false)}
-        />
-      </SafeAreaView>
-    </SafeAreaProvider>
+        </SafeAreaView>
+      </SafeAreaProvider>
     </GestureHandlerRootView>
   );
 }
@@ -352,6 +489,30 @@ const styles = StyleSheet.create({
   },
   root: {
     flex: 1,
+  },
+  setupScreen: {
+    flex: 1,
+    justifyContent: 'center',
+    padding: 18,
+  },
+  setupCard: {
+    borderWidth: 1,
+    borderRadius: 20,
+    padding: 20,
+    gap: 12,
+  },
+  setupLabel: {
+    marginTop: 8,
+    fontSize: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  setupActions: {
+    gap: 12,
+  },
+  setupStatus: {
+    textAlign: 'center',
+    paddingTop: 6,
   },
   header: {
     paddingHorizontal: 18,
@@ -411,10 +572,17 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
   },
+  input: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
   primaryButton: {
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 12,
+    alignItems: 'center',
   },
   primaryButtonText: {
     color: '#111111',

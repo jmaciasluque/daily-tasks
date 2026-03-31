@@ -3,12 +3,23 @@ import type { Data, Settings } from '../types';
 import { normalizeData } from './data';
 import { defaultRemotePath } from '../config/env';
 
+export type LoginFlowSession = {
+  serverUrl: string;
+  loginUrl: string;
+  pollEndpoint: string;
+  pollToken: string;
+};
+
 export const defaultSettings: Settings = {
   baseUrl: '',
   username: '',
   password: '',
   remotePath: defaultRemotePath,
 };
+
+function normalizeServerUrl(serverUrl: string): string {
+  return serverUrl.trim().replace(/\/+$/, '');
+}
 
 export function isSettingsComplete(settings: Settings): boolean {
   return !!(settings.baseUrl && settings.username && settings.password && settings.remotePath);
@@ -24,6 +35,77 @@ function buildWebdavUrl(settings: Settings): string {
   const base = settings.baseUrl.replace(/\/+$/, '');
   const path = settings.remotePath.startsWith('/') ? settings.remotePath : `/${settings.remotePath}`;
   return `${base}${path}`;
+}
+
+function buildRemotePath(loginName: string): string {
+  return `/remote.php/dav/files/${encodeURIComponent(loginName)}/.daily-tasks.json`;
+}
+
+export async function startNextcloudLogin(serverUrl: string): Promise<LoginFlowSession> {
+  const normalizedServerUrl = normalizeServerUrl(serverUrl);
+  if (!normalizedServerUrl) {
+    throw new Error('Server URL is required');
+  }
+
+  const res = await fetch(`${normalizedServerUrl}/index.php/login/v2`, {
+    method: 'POST',
+  });
+  if (!res.ok) {
+    throw new Error(`Login flow start failed: ${res.status}`);
+  }
+
+  const payload = await res.json() as {
+    poll?: { token?: string; endpoint?: string };
+    login?: string;
+  };
+
+  if (!payload.login || !payload.poll?.token || !payload.poll.endpoint) {
+    throw new Error('Login flow response was incomplete');
+  }
+
+  return {
+    serverUrl: normalizedServerUrl,
+    loginUrl: payload.login,
+    pollEndpoint: payload.poll.endpoint,
+    pollToken: payload.poll.token,
+  };
+}
+
+export async function pollNextcloudLogin(session: LoginFlowSession): Promise<Settings | null> {
+  const params = new URLSearchParams();
+  params.set('token', session.pollToken);
+
+  const res = await fetch(session.pollEndpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: params.toString(),
+  });
+
+  if (res.status === 404) {
+    return null;
+  }
+  if (!res.ok) {
+    throw new Error(`Login flow poll failed: ${res.status}`);
+  }
+
+  const payload = await res.json() as {
+    server?: string;
+    loginName?: string;
+    appPassword?: string;
+  };
+
+  if (!payload.server || !payload.loginName || !payload.appPassword) {
+    throw new Error('Login flow poll response was incomplete');
+  }
+
+  return {
+    baseUrl: normalizeServerUrl(payload.server),
+    username: payload.loginName.trim(),
+    password: payload.appPassword.trim(),
+    remotePath: buildRemotePath(payload.loginName.trim()),
+  };
 }
 
 export async function fetchRemoteData(settings: Settings): Promise<Data | null> {
