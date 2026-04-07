@@ -10,6 +10,22 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 
 ---
 
+## [0.3.1] - 2026-04-07
+
+### CLI
+
+#### Fixed
+- Fixed TUI layout overflow that caused the top or bottom of the screen to be
+  clipped when the footer status lines were present
+- Dynamically measure footer height instead of using a hardcoded offset so the
+  layout adapts correctly at any terminal size
+
+#### Changed
+- Sort tasks by deadline time (chronologically) instead of insertion order;
+  tasks without a deadline appear after those with one
+
+---
+
 ## [0.3.0] - 2026-03-30
 
 ### Shared Config

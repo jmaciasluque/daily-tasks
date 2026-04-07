@@ -191,29 +191,73 @@ func TestCloneData(t *testing.T) {
 }
 
 func TestOrderedTasks(t *testing.T) {
-	data := Data{
-		Tasks: []Task{
-			{ID: 1, Title: "A", Status: "todo", Order: 3},
-			{ID: 2, Title: "B", Status: "done", Order: 1},
-			{ID: 3, Title: "C", Status: "todo", Order: 1},
-			{ID: 4, Title: "D", Status: "todo", Order: 2},
-		},
-	}
+	t.Run("sorted by order when no deadlines", func(t *testing.T) {
+		data := Data{
+			Tasks: []Task{
+				{ID: 1, Title: "A", Status: "todo", Order: 3},
+				{ID: 2, Title: "B", Status: "done", Order: 1},
+				{ID: 3, Title: "C", Status: "todo", Order: 1},
+				{ID: 4, Title: "D", Status: "todo", Order: 2},
+			},
+		}
 
-	todoTasks := OrderedTasks(&data, "todo")
-	if len(todoTasks) != 3 {
-		t.Fatalf("expected 3 todo tasks, got %d", len(todoTasks))
-	}
+		todoTasks := OrderedTasks(&data, "todo")
+		if len(todoTasks) != 3 {
+			t.Fatalf("expected 3 todo tasks, got %d", len(todoTasks))
+		}
 
-	// Should be sorted by order
-	if todoTasks[0].ID != 3 || todoTasks[1].ID != 4 || todoTasks[2].ID != 1 {
-		t.Errorf("tasks not sorted correctly: %v, %v, %v", todoTasks[0].ID, todoTasks[1].ID, todoTasks[2].ID)
-	}
+		if todoTasks[0].ID != 3 || todoTasks[1].ID != 4 || todoTasks[2].ID != 1 {
+			t.Errorf("tasks not sorted correctly: %v, %v, %v", todoTasks[0].ID, todoTasks[1].ID, todoTasks[2].ID)
+		}
 
-	doneTasks := OrderedTasks(&data, "done")
-	if len(doneTasks) != 1 {
-		t.Fatalf("expected 1 done task, got %d", len(doneTasks))
-	}
+		doneTasks := OrderedTasks(&data, "done")
+		if len(doneTasks) != 1 {
+			t.Fatalf("expected 1 done task, got %d", len(doneTasks))
+		}
+	})
+
+	t.Run("sorted by deadline time", func(t *testing.T) {
+		data := Data{
+			Tasks: []Task{
+				{ID: 1, Title: "Late", Status: "todo", Order: 1, Deadline: "22:00"},
+				{ID: 2, Title: "Early", Status: "todo", Order: 2, Deadline: "06:00"},
+				{ID: 3, Title: "Mid", Status: "todo", Order: 3, Deadline: "12:00"},
+			},
+		}
+
+		tasks := OrderedTasks(&data, "todo")
+		if tasks[0].ID != 2 || tasks[1].ID != 3 || tasks[2].ID != 1 {
+			t.Errorf("expected order [2,3,1] got [%d,%d,%d]", tasks[0].ID, tasks[1].ID, tasks[2].ID)
+		}
+	})
+
+	t.Run("tasks with deadlines sort before tasks without", func(t *testing.T) {
+		data := Data{
+			Tasks: []Task{
+				{ID: 1, Title: "No deadline", Status: "todo", Order: 1},
+				{ID: 2, Title: "Has deadline", Status: "todo", Order: 2, Deadline: "08:00"},
+			},
+		}
+
+		tasks := OrderedTasks(&data, "todo")
+		if tasks[0].ID != 2 || tasks[1].ID != 1 {
+			t.Errorf("expected task with deadline first, got [%d,%d]", tasks[0].ID, tasks[1].ID)
+		}
+	})
+
+	t.Run("same deadline sorts by order", func(t *testing.T) {
+		data := Data{
+			Tasks: []Task{
+				{ID: 1, Title: "Second", Status: "todo", Order: 2, Deadline: "08:00"},
+				{ID: 2, Title: "First", Status: "todo", Order: 1, Deadline: "08:00"},
+			},
+		}
+
+		tasks := OrderedTasks(&data, "todo")
+		if tasks[0].ID != 2 || tasks[1].ID != 1 {
+			t.Errorf("expected order [2,1] got [%d,%d]", tasks[0].ID, tasks[1].ID)
+		}
+	})
 }
 
 func TestNextOrder(t *testing.T) {

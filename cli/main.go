@@ -477,7 +477,7 @@ func (m model) View() string {
 		content = lipgloss.JoinVertical(lipgloss.Left, content, modal)
 	}
 
-	return lipgloss.Place(
+	out := lipgloss.Place(
 		m.width,
 		m.height,
 		lipgloss.Left,
@@ -486,6 +486,11 @@ func (m model) View() string {
 		lipgloss.WithWhitespaceBackground(lipgloss.Color(theme.Bg)),
 		lipgloss.WithWhitespaceForeground(lipgloss.Color(theme.Bg)),
 	)
+	// Hard-cap output to terminal height to prevent any overflow
+	if lines := strings.SplitN(out, "\n", m.height+1); len(lines) > m.height {
+		out = strings.Join(lines[:m.height], "\n")
+	}
+	return out
 }
 
 func (m model) renderList(idx int) string {
@@ -521,7 +526,7 @@ func (m model) renderList(idx int) string {
 		Background(lipgloss.Color(theme.PanelBg)).
 		Padding(1, 1).
 		Width(listWidth).
-		Height(m.lists[idx].Height() + 2).
+		Height(m.lists[idx].Height() + 3).
 		Render(lipgloss.JoinVertical(lipgloss.Left, title, listView))
 	return box
 }
@@ -599,7 +604,10 @@ func (m *model) resizeLists() {
 		usableWidth = 60
 	}
 	listWidth := usableWidth / 3
-	listHeight := m.height - 10
+	// Vertical budget: outer padding (2) + header (1) + box border (2) +
+	// box padding (2) + column title with padding (3) + footer (measured)
+	footerHeight := lipgloss.Height(m.renderFooter())
+	listHeight := m.height - 10 - footerHeight
 	if listHeight < 5 {
 		listHeight = 5
 	}
