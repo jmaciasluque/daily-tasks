@@ -10,6 +10,22 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 
 ---
 
+## [0.4.0] - 2026-04-08
+
+### CLI
+
+#### Added
+- AM/PM section dividers in the To Do column group tasks visually by
+  morning and afternoon
+- Each task with a deadline now shows a live time-remaining or overdue
+  indicator (e.g. "in 2h 15m", "30m ago") that updates every minute
+
+#### Changed
+- Custom list delegate renders separator items as muted divider lines
+- J/K reordering and H/L column moves correctly skip separator items
+
+---
+
 ## [0.3.2] - 2026-04-08
 
 ### CLI

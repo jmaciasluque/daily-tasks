@@ -229,6 +229,58 @@ func ResetIfNewDay(data *Data) bool {
 	return true
 }
 
+// IsAM returns true if the deadline hour is before noon (AM).
+func IsAM(deadline string) bool {
+	if len(deadline) < 5 {
+		return false
+	}
+	h, err := strconv.Atoi(deadline[:2])
+	if err != nil {
+		return false
+	}
+	return h < 12
+}
+
+// DeadlineIndicator returns a human-readable time-remaining or overdue string
+// relative to now. Returns "" for empty or invalid deadlines.
+func DeadlineIndicator(deadline string, now time.Time) string {
+	if deadline == "" || len(deadline) < 5 {
+		return ""
+	}
+	parts := strings.SplitN(deadline, ":", 2)
+	if len(parts) != 2 {
+		return ""
+	}
+	h, err1 := strconv.Atoi(parts[0])
+	m, err2 := strconv.Atoi(parts[1])
+	if err1 != nil || err2 != nil {
+		return ""
+	}
+	target := time.Date(now.Year(), now.Month(), now.Day(), h, m, 0, 0, now.Location())
+	diff := target.Sub(now)
+
+	if diff > -time.Minute && diff < time.Minute {
+		return "now"
+	}
+	if diff > 0 {
+		return "in " + formatDuration(diff)
+	}
+	return formatDuration(-diff) + " ago"
+}
+
+func formatDuration(d time.Duration) string {
+	totalMin := int(d.Minutes())
+	if totalMin < 60 {
+		return strconv.Itoa(totalMin) + "m"
+	}
+	h := totalMin / 60
+	m := totalMin % 60
+	if m == 0 {
+		return strconv.Itoa(h) + "h"
+	}
+	return strconv.Itoa(h) + "h " + strconv.Itoa(m) + "m"
+}
+
 // ClampIndex clamps an index to valid range
 func ClampIndex(idx, length int) int {
 	if length <= 0 {
