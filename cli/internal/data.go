@@ -145,9 +145,20 @@ func OrderedTasks(data *Data, status string) []*Task {
 	return tasks
 }
 
-// SortTasks sorts tasks by order, then by ID
+// SortTasks sorts tasks by deadline time first, then by order.
+// Tasks with a deadline are sorted chronologically before tasks without one.
 func SortTasks(tasks []*Task) {
 	sort.SliceStable(tasks, func(i, j int) bool {
+		di, dj := tasks[i].Deadline, tasks[j].Deadline
+		if di != dj {
+			if di == "" {
+				return false // no deadline sorts after
+			}
+			if dj == "" {
+				return true // has deadline sorts before
+			}
+			return di < dj
+		}
 		if tasks[i].Order == tasks[j].Order {
 			return tasks[i].ID < tasks[j].ID
 		}
