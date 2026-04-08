@@ -2,6 +2,7 @@ package internal
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -131,8 +132,24 @@ func TestFetchRemoteData(t *testing.T) {
 
 		settings := WebDAVSettings{URL: server.URL, User: "user", Pass: "pass"}
 		_, err := FetchRemoteData(settings)
+		if !errors.Is(err, ErrRemoteNotFound) {
+			t.Errorf("expected ErrRemoteNotFound, got %v", err)
+		}
+	})
+
+	t.Run("server error is not ErrRemoteNotFound", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+		}))
+		defer server.Close()
+
+		settings := WebDAVSettings{URL: server.URL, User: "user", Pass: "pass"}
+		_, err := FetchRemoteData(settings)
 		if err == nil {
-			t.Error("expected error for 404")
+			t.Fatal("expected error for 500")
+		}
+		if errors.Is(err, ErrRemoteNotFound) {
+			t.Error("500 error should not match ErrRemoteNotFound")
 		}
 	})
 
@@ -146,6 +163,9 @@ func TestFetchRemoteData(t *testing.T) {
 		_, err := FetchRemoteData(settings)
 		if err == nil {
 			t.Error("expected error for 500")
+		}
+		if errors.Is(err, ErrRemoteNotFound) {
+			t.Error("500 error should not match ErrRemoteNotFound")
 		}
 	})
 }
