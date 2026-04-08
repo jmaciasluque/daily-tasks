@@ -10,6 +10,9 @@ import (
 	"time"
 )
 
+// ErrRemoteNotFound is returned when the remote file does not exist (HTTP 404).
+var ErrRemoteNotFound = errors.New("remote file not found")
+
 // WebDAVSettings contains the configuration for WebDAV sync
 type WebDAVSettings struct {
 	URL  string
@@ -56,7 +59,7 @@ func FetchRemoteData(settings WebDAVSettings) (Data, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNotFound {
-		return Data{}, errors.New("remote file not found")
+		return Data{}, ErrRemoteNotFound
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return Data{}, fmt.Errorf("remote status %d", resp.StatusCode)
@@ -109,7 +112,7 @@ func SyncWithRemote(settings WebDAVSettings, local Data) SyncResult {
 	remote, err := FetchRemoteData(settings)
 	if err != nil {
 		// If remote doesn't exist, push local
-		if strings.Contains(err.Error(), "not found") {
+		if errors.Is(err, ErrRemoteNotFound) {
 			if pushErr := PushRemoteData(settings, local); pushErr != nil {
 				return SyncResult{Data: local, Action: "error", Message: fmt.Sprintf("Push failed: %s", pushErr)}
 			}

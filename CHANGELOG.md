@@ -10,6 +10,18 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 
 ---
 
+## [0.3.2] - 2026-04-08
+
+### CLI
+
+#### Fixed
+- Replaced fragile string matching for WebDAV 404 detection with a sentinel
+  `ErrRemoteNotFound` error and `errors.Is` checks
+- Added test coverage asserting that 404 and 500 responses produce distinct
+  error types
+
+---
+
 ## [0.3.1] - 2026-04-07
 
 ### CLI
