@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -34,12 +35,40 @@ type taskItem struct {
 func (t taskItem) Title() string {
 	s := fmt.Sprintf("%s • %dm", t.title, t.duration)
 	if t.deadline != "" {
-		s += fmt.Sprintf(" • ⏰ %s", t.deadline)
+		indicator := internal.DeadlineIndicator(t.deadline, time.Now())
+		if indicator != "" {
+			s += fmt.Sprintf(" • ⏰ %s (%s)", t.deadline, indicator)
+		} else {
+			s += fmt.Sprintf(" • ⏰ %s", t.deadline)
+		}
 	}
 	return s
 }
 func (t taskItem) Description() string { return "" }
 func (t taskItem) FilterValue() string { return t.title }
+
+// separatorItem renders as a visual AM/PM group divider in the list.
+type separatorItem struct {
+	label string
+}
+
+func (s separatorItem) Title() string       { return s.label }
+func (s separatorItem) Description() string { return "" }
+func (s separatorItem) FilterValue() string { return "" }
+
+// taskDelegate wraps DefaultDelegate to render separator items as muted dividers.
+type taskDelegate struct {
+	list.DefaultDelegate
+	separatorStyle lipgloss.Style
+}
+
+func (d taskDelegate) Render(w io.Writer, m list.Model, index int, item list.Item) {
+	if sep, ok := item.(separatorItem); ok {
+		fmt.Fprint(w, d.separatorStyle.Render(sep.label))
+		return
+	}
+	d.DefaultDelegate.Render(w, m, index, item)
+}
 
 type tickMsg time.Time
 
@@ -312,17 +341,17 @@ func (m model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "J":
 		m.pushHistory()
-		if ok, newIdx := m.moveTask(1); ok {
+		if ok, taskIdx := m.moveTask(1); ok {
 			m.syncLists()
-			m.lists[m.focused].Select(newIdx)
+			m.lists[m.focused].Select(taskIndexToListIndex(m.lists[m.focused].Items(), taskIdx))
 			_ = internal.SaveData(m.dataPath, m.data)
 		}
 		return m, nil
 	case "K":
 		m.pushHistory()
-		if ok, newIdx := m.moveTask(-1); ok {
+		if ok, taskIdx := m.moveTask(-1); ok {
 			m.syncLists()
-			m.lists[m.focused].Select(newIdx)
+			m.lists[m.focused].Select(taskIndexToListIndex(m.lists[m.focused].Items(), taskIdx))
 			_ = internal.SaveData(m.dataPath, m.data)
 		}
 		return m, nil
@@ -619,7 +648,18 @@ func (m *model) resizeLists() {
 
 func (m *model) syncLists() {
 	var todoItems, doneItems, skippedItems []list.Item
+	prevGroup := ""
 	for _, t := range internal.OrderedTasks(&m.data, "todo") {
+		if t.Deadline != "" {
+			group := "AM"
+			if !internal.IsAM(t.Deadline) {
+				group = "PM"
+			}
+			if group != prevGroup {
+				todoItems = append(todoItems, separatorItem{label: "── " + group + " ──"})
+				prevGroup = group
+			}
+		}
 		todoItems = append(todoItems, taskItem{id: t.ID, title: t.Title, duration: t.Duration, deadline: t.Deadline})
 	}
 	for _, t := range internal.OrderedTasks(&m.data, "done") {
@@ -734,12 +774,49 @@ func (m *model) applyTheme() {
 			Foreground(lipgloss.Color(theme.Accent)).
 			Background(lipgloss.Color(theme.PanelBg))
 
-		m.lists[i].SetDelegate(delegate)
+		if i == 0 {
+			m.lists[i].SetDelegate(taskDelegate{
+				DefaultDelegate: delegate,
+				separatorStyle: lipgloss.NewStyle().
+					Foreground(lipgloss.Color(theme.Muted)).
+					Padding(0, 0, 0, 2).
+					Width(width),
+			})
+		} else {
+			m.lists[i].SetDelegate(delegate)
+		}
 		styles := m.lists[i].Styles
 		styles.PaginationStyle = styles.PaginationStyle.Foreground(lipgloss.Color(theme.Muted))
 		styles.HelpStyle = styles.HelpStyle.Foreground(lipgloss.Color(theme.Muted))
 		m.lists[i].Styles = styles
 	}
+}
+
+// listIndexToTaskIndex converts a list index (which may include separator items)
+// to a task-only index by counting only taskItem entries before it.
+func listIndexToTaskIndex(items []list.Item, listIdx int) int {
+	taskIdx := 0
+	for i := 0; i < listIdx && i < len(items); i++ {
+		if _, ok := items[i].(taskItem); ok {
+			taskIdx++
+		}
+	}
+	return taskIdx
+}
+
+// taskIndexToListIndex converts a task-only index to a list index by
+// counting separator items before the Nth task.
+func taskIndexToListIndex(items []list.Item, taskIdx int) int {
+	count := 0
+	for i, item := range items {
+		if _, ok := item.(taskItem); ok {
+			if count == taskIdx {
+				return i
+			}
+			count++
+		}
+	}
+	return 0
 }
 
 func (m *model) moveTask(delta int) (bool, int) {
@@ -748,7 +825,12 @@ func (m *model) moveTask(delta int) (bool, int) {
 	if len(ordered) == 0 {
 		return false, 0
 	}
-	idx := m.lists[m.focused].Index()
+	items := m.lists[m.focused].Items()
+	listIdx := m.lists[m.focused].Index()
+	if _, ok := items[listIdx].(taskItem); !ok {
+		return false, 0 // cursor is on a separator
+	}
+	idx := listIndexToTaskIndex(items, listIdx)
 	if idx < 0 || idx >= len(ordered) {
 		return false, 0
 	}
@@ -768,18 +850,7 @@ func (m *model) moveTaskToCol(targetCol int) (bool, int) {
 	newStatus := colStatus[targetCol]
 	t.Status = newStatus
 	t.Order = internal.NextOrder(&m.data, newStatus)
-	newIdx := m.indexInStatus(t.ID, newStatus)
-	return true, newIdx
-}
-
-func (m *model) indexInStatus(id int, status string) int {
-	ordered := internal.OrderedTasks(&m.data, status)
-	for i := range ordered {
-		if ordered[i].ID == id {
-			return i
-		}
-	}
-	return 0
+	return true, 0
 }
 
 func syncRemoteCmd(localData internal.Data) tea.Cmd {

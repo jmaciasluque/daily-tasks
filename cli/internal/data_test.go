@@ -384,6 +384,57 @@ func TestResetIfNewDay(t *testing.T) {
 	})
 }
 
+func TestIsAM(t *testing.T) {
+	tests := []struct {
+		deadline string
+		want     bool
+	}{
+		{"06:00", true},
+		{"11:59", true},
+		{"00:00", true},
+		{"12:00", false},
+		{"13:30", false},
+		{"23:59", false},
+		{"", false},
+		{"bad", false},
+	}
+	for _, tt := range tests {
+		if got := IsAM(tt.deadline); got != tt.want {
+			t.Errorf("IsAM(%q) = %v, want %v", tt.deadline, got, tt.want)
+		}
+	}
+}
+
+func TestDeadlineIndicator(t *testing.T) {
+	now := time.Date(2026, 4, 8, 10, 0, 0, 0, time.UTC)
+
+	tests := []struct {
+		name     string
+		deadline string
+		want     string
+	}{
+		{"empty", "", ""},
+		{"invalid", "bad", ""},
+		{"in 2h", "12:00", "in 2h"},
+		{"in 2h 30m", "12:30", "in 2h 30m"},
+		{"in 45m", "10:45", "in 45m"},
+		{"in 5m", "10:05", "in 5m"},
+		{"now", "10:00", "now"},
+		{"30m ago", "09:30", "30m ago"},
+		{"1h 30m ago", "08:30", "1h 30m ago"},
+		{"3h ago", "07:00", "3h ago"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := DeadlineIndicator(tt.deadline, now)
+			if got != tt.want {
+				t.Errorf("DeadlineIndicator(%q, 10:00) = %q, want %q", tt.deadline, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestClampIndex(t *testing.T) {
 	tests := []struct {
 		idx, length, want int
