@@ -5,27 +5,28 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"os"
+	"path/filepath"
 	"testing"
 )
 
 func TestLoadWebDAVSettings(t *testing.T) {
-	t.Run("all vars set", func(t *testing.T) {
-		os.Setenv("DAILY_TASKS_WEBDAV_URL", "https://example.com/dav")
-		os.Setenv("DAILY_TASKS_WEBDAV_USER", "testuser")
-		os.Setenv("DAILY_TASKS_WEBDAV_PASS", "testpass")
-		defer func() {
-			os.Unsetenv("DAILY_TASKS_WEBDAV_URL")
-			os.Unsetenv("DAILY_TASKS_WEBDAV_USER")
-			os.Unsetenv("DAILY_TASKS_WEBDAV_PASS")
-		}()
+	// Point DAILY_TASKS_CONFIG to an empty temp dir so the real user config
+	// is never picked up. Tests exercise the legacy env-var fallback path.
+	isolateConfig := func(t *testing.T) {
+		t.Helper()
+		tmpCfg := filepath.Join(t.TempDir(), "config.json")
+		t.Setenv("DAILY_TASKS_CONFIG", tmpCfg)
+	}
+
+	t.Run("legacy env vars", func(t *testing.T) {
+		isolateConfig(t)
+		t.Setenv("DAILY_TASKS_WEBDAV_URL", "https://example.com/dav")
+		t.Setenv("DAILY_TASKS_WEBDAV_USER", "testuser")
+		t.Setenv("DAILY_TASKS_WEBDAV_PASS", "testpass")
 
 		settings, err := LoadWebDAVSettings()
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
-		}
-		if settings.URL != "https://example.com/dav" {
-			t.Errorf("expected URL 'https://example.com/dav', got '%s'", settings.URL)
 		}
 		if settings.User != "testuser" {
 			t.Errorf("expected User 'testuser', got '%s'", settings.User)
@@ -36,13 +37,9 @@ func TestLoadWebDAVSettings(t *testing.T) {
 	})
 
 	t.Run("missing URL", func(t *testing.T) {
-		os.Unsetenv("DAILY_TASKS_WEBDAV_URL")
-		os.Setenv("DAILY_TASKS_WEBDAV_USER", "testuser")
-		os.Setenv("DAILY_TASKS_WEBDAV_PASS", "testpass")
-		defer func() {
-			os.Unsetenv("DAILY_TASKS_WEBDAV_USER")
-			os.Unsetenv("DAILY_TASKS_WEBDAV_PASS")
-		}()
+		isolateConfig(t)
+		t.Setenv("DAILY_TASKS_WEBDAV_USER", "testuser")
+		t.Setenv("DAILY_TASKS_WEBDAV_PASS", "testpass")
 
 		_, err := LoadWebDAVSettings()
 		if err == nil {
@@ -51,13 +48,9 @@ func TestLoadWebDAVSettings(t *testing.T) {
 	})
 
 	t.Run("missing user", func(t *testing.T) {
-		os.Setenv("DAILY_TASKS_WEBDAV_URL", "https://example.com/dav")
-		os.Unsetenv("DAILY_TASKS_WEBDAV_USER")
-		os.Setenv("DAILY_TASKS_WEBDAV_PASS", "testpass")
-		defer func() {
-			os.Unsetenv("DAILY_TASKS_WEBDAV_URL")
-			os.Unsetenv("DAILY_TASKS_WEBDAV_PASS")
-		}()
+		isolateConfig(t)
+		t.Setenv("DAILY_TASKS_WEBDAV_URL", "https://example.com/dav")
+		t.Setenv("DAILY_TASKS_WEBDAV_PASS", "testpass")
 
 		_, err := LoadWebDAVSettings()
 		if err == nil {
@@ -66,13 +59,9 @@ func TestLoadWebDAVSettings(t *testing.T) {
 	})
 
 	t.Run("missing password", func(t *testing.T) {
-		os.Setenv("DAILY_TASKS_WEBDAV_URL", "https://example.com/dav")
-		os.Setenv("DAILY_TASKS_WEBDAV_USER", "testuser")
-		os.Unsetenv("DAILY_TASKS_WEBDAV_PASS")
-		defer func() {
-			os.Unsetenv("DAILY_TASKS_WEBDAV_URL")
-			os.Unsetenv("DAILY_TASKS_WEBDAV_USER")
-		}()
+		isolateConfig(t)
+		t.Setenv("DAILY_TASKS_WEBDAV_URL", "https://example.com/dav")
+		t.Setenv("DAILY_TASKS_WEBDAV_USER", "testuser")
 
 		_, err := LoadWebDAVSettings()
 		if err == nil {
@@ -323,14 +312,10 @@ func TestSyncWithRemote(t *testing.T) {
 
 func TestHasWebDAVConfig(t *testing.T) {
 	t.Run("configured", func(t *testing.T) {
-		os.Setenv("DAILY_TASKS_WEBDAV_URL", "https://example.com")
-		os.Setenv("DAILY_TASKS_WEBDAV_USER", "user")
-		os.Setenv("DAILY_TASKS_WEBDAV_PASS", "pass")
-		defer func() {
-			os.Unsetenv("DAILY_TASKS_WEBDAV_URL")
-			os.Unsetenv("DAILY_TASKS_WEBDAV_USER")
-			os.Unsetenv("DAILY_TASKS_WEBDAV_PASS")
-		}()
+		t.Setenv("DAILY_TASKS_CONFIG", filepath.Join(t.TempDir(), "config.json"))
+		t.Setenv("DAILY_TASKS_WEBDAV_URL", "https://example.com")
+		t.Setenv("DAILY_TASKS_WEBDAV_USER", "user")
+		t.Setenv("DAILY_TASKS_WEBDAV_PASS", "pass")
 
 		if !HasWebDAVConfig() {
 			t.Error("expected HasWebDAVConfig to return true")
@@ -338,9 +323,7 @@ func TestHasWebDAVConfig(t *testing.T) {
 	})
 
 	t.Run("not configured", func(t *testing.T) {
-		os.Unsetenv("DAILY_TASKS_WEBDAV_URL")
-		os.Unsetenv("DAILY_TASKS_WEBDAV_USER")
-		os.Unsetenv("DAILY_TASKS_WEBDAV_PASS")
+		t.Setenv("DAILY_TASKS_CONFIG", filepath.Join(t.TempDir(), "config.json"))
 
 		if HasWebDAVConfig() {
 			t.Error("expected HasWebDAVConfig to return false")

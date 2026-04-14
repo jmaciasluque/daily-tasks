@@ -37,6 +37,10 @@ type webStateResponse struct {
 	Version        string        `json:"version"`
 }
 
+type webStatsResponse struct {
+	Stats internal.StatsSummary `json:"stats"`
+}
+
 type webErrorResponse struct {
 	Error string `json:"error"`
 }
@@ -152,6 +156,7 @@ func (s *webServer) routes() http.Handler {
 	mux.HandleFunc("/api/state", s.handleState)
 	mux.HandleFunc("/api/data", s.handleData)
 	mux.HandleFunc("/api/sync", s.handleSync)
+	mux.HandleFunc("/api/stats", s.handleStats)
 	mux.HandleFunc("/api/setup/local", s.handleSetupLocal)
 	mux.HandleFunc("/api/setup/nextcloud/start", s.handleSetupNextcloudStart)
 	mux.HandleFunc("/api/setup/nextcloud/poll", s.handleSetupNextcloudPoll)
@@ -239,7 +244,8 @@ func (s *webServer) handleSync(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := internal.SaveData(s.dataPath, internal.NormalizeData(result.Data)); err != nil {
+	before := internal.CloneData(data)
+	if err := internal.SaveDataWithHistory(s.dataPath, before, internal.NormalizeData(result.Data)); err != nil {
 		s.mu.Unlock()
 		writeJSON(w, http.StatusInternalServerError, webErrorResponse{Error: err.Error()})
 		return
@@ -252,6 +258,35 @@ func (s *webServer) handleSync(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, state)
+}
+
+func (s *webServer) handleStats(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeMethodNotAllowed(w, http.MethodGet)
+		return
+	}
+	if !s.hasConfiguredBackend() {
+		writeJSON(w, http.StatusConflict, webErrorResponse{Error: "backend setup is required"})
+		return
+	}
+
+	from := strings.TrimSpace(r.URL.Query().Get("from"))
+	to := strings.TrimSpace(r.URL.Query().Get("to"))
+
+	s.mu.Lock()
+	data, err := s.loadDataLocked()
+	if err != nil {
+		s.mu.Unlock()
+		writeJSON(w, http.StatusInternalServerError, webErrorResponse{Error: err.Error()})
+		return
+	}
+	stats, err := internal.BuildStats(s.dataPath, data, from, to)
+	s.mu.Unlock()
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, webErrorResponse{Error: err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, webStatsResponse{Stats: stats})
 }
 
 func (s *webServer) handleSetupLocal(w http.ResponseWriter, r *http.Request) {
@@ -380,8 +415,9 @@ func (s *webServer) loadDataLocked() (internal.Data, error) {
 	if err != nil {
 		return internal.Data{}, err
 	}
+	before := internal.CloneData(data)
 	if internal.ResetIfNewDay(&data) {
-		if err := internal.SaveData(s.dataPath, data); err != nil {
+		if err := internal.SaveDataWithHistory(s.dataPath, before, data); err != nil {
 			return internal.Data{}, err
 		}
 		data, err = internal.LoadData(s.dataPath)
@@ -401,9 +437,14 @@ func (s *webServer) currentStateLocked(message, action string) (webStateResponse
 }
 
 func (s *webServer) saveDataLocked(data internal.Data) (webStateResponse, error) {
+	current, err := s.loadDataLocked()
+	if err != nil {
+		return webStateResponse{}, err
+	}
+
 	data = internal.NormalizeData(data)
 	internal.ResetIfNewDay(&data)
-	if err := internal.SaveData(s.dataPath, data); err != nil {
+	if err := internal.SaveDataWithHistory(s.dataPath, current, data); err != nil {
 		return webStateResponse{}, err
 	}
 	return s.currentStateLocked("Saved locally.", "saved")
