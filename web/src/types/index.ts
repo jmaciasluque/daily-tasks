@@ -27,3 +27,44 @@ export type ServerState = {
   sync_configured: boolean;
   version: string;
 };
+
+export type DailyStats = {
+  date: string;
+  task_count: number;
+  todo_count: number;
+  done_count: number;
+  skipped_count: number;
+  todo_duration: number;
+  done_duration: number;
+  skipped_duration: number;
+  completion_rate: number;
+};
+
+export type TaskFrequencyStats = {
+  task_id: number;
+  title: string;
+  recorded_days: number;
+  todo_days: number;
+  done_days: number;
+  skipped_days: number;
+  completion_rate: number;
+  total_duration: number;
+  done_duration: number;
+  skipped_duration: number;
+};
+
+export type StatsSummary = {
+  from: string;
+  to: string;
+  recorded_days: number;
+  task_count: number;
+  todo_count: number;
+  done_count: number;
+  skipped_count: number;
+  todo_duration: number;
+  done_duration: number;
+  skipped_duration: number;
+  completion_rate: number;
+  daily: DailyStats[];
+  tasks: TaskFrequencyStats[];
+};

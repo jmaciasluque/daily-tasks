@@ -24,6 +24,35 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 - Custom list delegate renders separator items as muted divider lines
 - J/K reordering and H/L column moves correctly skip separator items
 
+### Shared History
+
+#### Added
+- Added a reversible sibling history file that records task snapshots by day and
+  mutation events without changing the main shared task data file
+- Daily resets now preserve the pre-reset state in history before all tasks are
+  returned to `todo`, making previous periods reportable
+
+### CLI
+
+#### Added
+- Added a `stats` command for querying historical task performance over preset
+  windows or explicit date ranges
+- Local saves, status changes, edits, deletes, sync merges, and undo/reset flows
+  now write to the history/audit store
+
+### Web
+
+#### Added
+- Added a dedicated Stats screen to the local web app with range filters, status
+  mix pie chart, daily histogram, and per-task frequency cards
+- Added a local `/api/stats` endpoint backed by the shared Go aggregation logic
+
+### Testing
+
+#### Added
+- Added Go test coverage for history persistence, reset snapshot preservation,
+  aggregation output, and the web stats endpoint
+
 ---
 
 ## [0.3.2] - 2026-04-08

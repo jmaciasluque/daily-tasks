@@ -1,4 +1,4 @@
-import type { Data, ServerState } from '../types';
+import type { Data, ServerState, StatsSummary } from '../types';
 import { normalizeData } from './data';
 
 type ErrorPayload = {
@@ -57,4 +57,10 @@ export async function syncServerData(): Promise<ServerState> {
   return normalizeState(await requestJSON<ServerState>('/api/sync', {
     method: 'POST',
   }));
+}
+
+export async function fetchServerStats(from: string, to: string): Promise<StatsSummary> {
+  const params = new URLSearchParams({ from, to });
+  const payload = await requestJSON<{ stats: StatsSummary }>(`/api/stats?${params.toString()}`);
+  return payload.stats;
 }

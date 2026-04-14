@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"daily-tasks/internal"
 )
@@ -87,6 +88,11 @@ func runNonTUI(args []string) (bool, error) {
 			return true, err
 		}
 		return true, runPush(cmdArgs)
+	case "stats":
+		if err := requireConfiguredBackend(); err != nil {
+			return true, err
+		}
+		return true, runStats(cmdArgs)
 	case "setup":
 		return true, runSetup(cmdArgs)
 	case "web":
@@ -110,6 +116,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  delete, del, rm  Delete a task")
 	fmt.Fprintln(w, "  sync             Sync with Nextcloud")
 	fmt.Fprintln(w, "  push             Force push local data")
+	fmt.Fprintln(w, "  stats            Show historical stats")
 	fmt.Fprintln(w, "  setup            Choose backend and connect Nextcloud")
 	fmt.Fprintln(w, "  web              Serve the local web app")
 	fmt.Fprintln(w, "")
@@ -144,6 +151,10 @@ func printPushUsage(w io.Writer) {
 	fmt.Fprintln(w, "Usage: daily-tasks push")
 }
 
+func printStatsUsage(w io.Writer) {
+	fmt.Fprintln(w, "Usage: daily-tasks stats [--period 7d|30d|90d|365d] [--from YYYY-MM-DD --to YYYY-MM-DD]")
+}
+
 func printWebUsage(w io.Writer) {
 	fmt.Fprintln(w, "Usage: daily-tasks web [--listen 127.0.0.1:8421] [--open=false]")
 }
@@ -164,7 +175,7 @@ func runList(args []string) error {
 		return err
 	}
 
-	data, path, reset, err := loadDataAndReset()
+	data, _, reset, err := loadDataAndReset()
 	if err != nil {
 		return err
 	}
@@ -190,11 +201,7 @@ func runList(args []string) error {
 		return errors.New("status must be one of todo, done, skipped, all")
 	}
 
-	if reset {
-		if err := internal.SaveData(path, data); err != nil {
-			return err
-		}
-	}
+	_ = reset
 	return nil
 }
 
@@ -241,10 +248,11 @@ func runAdd(args []string) error {
 		Order:    internal.NextOrder(&data, statusValue),
 		Deadline: deadlineValue,
 	}
+	before := internal.CloneData(data)
 	data.Tasks = append(data.Tasks, newTask)
 	data.NextID++
 
-	if err := internal.SaveData(path, data); err != nil {
+	if err := internal.SaveDataWithHistory(path, before, data); err != nil {
 		return err
 	}
 	fmt.Printf("Added task #%d\n", newTask.ID)
@@ -282,10 +290,11 @@ func runMove(args []string, status string) error {
 		return nil
 	}
 
+	before := internal.CloneData(data)
 	task.Status = status
 	task.Order = internal.NextOrder(&data, status)
 
-	if err := internal.SaveData(path, data); err != nil {
+	if err := internal.SaveDataWithHistory(path, before, data); err != nil {
 		return err
 	}
 	fmt.Printf("Updated task #%d to %s\n", id, status)
@@ -323,10 +332,11 @@ func runSkip(args []string) error {
 		return nil
 	}
 
+	before := internal.CloneData(data)
 	task.Status = "skipped"
 	task.Order = internal.NextOrder(&data, "skipped")
 
-	if err := internal.SaveData(path, data); err != nil {
+	if err := internal.SaveDataWithHistory(path, before, data); err != nil {
 		return err
 	}
 	fmt.Printf("Skipped task #%d\n", id)
@@ -358,9 +368,10 @@ func runDelete(args []string) error {
 	if internal.FindTask(&data, id) == nil {
 		return fmt.Errorf("task %d not found", id)
 	}
+	before := internal.CloneData(data)
 	internal.DeleteTask(&data, id)
 
-	if err := internal.SaveData(path, data); err != nil {
+	if err := internal.SaveDataWithHistory(path, before, data); err != nil {
 		return err
 	}
 	fmt.Printf("Deleted task #%d\n", id)
@@ -382,11 +393,7 @@ func runSync(args []string) error {
 	if err != nil {
 		return err
 	}
-	if reset {
-		if err := internal.SaveData(path, data); err != nil {
-			return err
-		}
-	}
+	_ = reset
 
 	settings, err := internal.LoadWebDAVSettings()
 	if err != nil {
@@ -398,8 +405,9 @@ func runSync(args []string) error {
 		return errors.New(result.Message)
 	}
 
+	before := internal.CloneData(data)
 	data = internal.NormalizeData(result.Data)
-	if err := internal.SaveData(path, data); err != nil {
+	if err := internal.SaveDataWithHistory(path, before, data); err != nil {
 		return err
 	}
 	fmt.Println(result.Message)
@@ -417,15 +425,11 @@ func runPush(args []string) error {
 		return err
 	}
 
-	data, path, reset, err := loadDataAndReset()
+	data, _, reset, err := loadDataAndReset()
 	if err != nil {
 		return err
 	}
-	if reset {
-		if err := internal.SaveData(path, data); err != nil {
-			return err
-		}
-	}
+	_ = reset
 
 	settings, err := internal.LoadWebDAVSettings()
 	if err != nil {
@@ -435,6 +439,56 @@ func runPush(args []string) error {
 		return err
 	}
 	fmt.Println("Pushed local data")
+	return nil
+}
+
+func runStats(args []string) error {
+	if wantsHelp(args) {
+		printStatsUsage(os.Stdout)
+		return nil
+	}
+	fs := flag.NewFlagSet("stats", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	period := fs.String("period", "30d", "7d|30d|90d|365d")
+	from := fs.String("from", "", "start date (YYYY-MM-DD)")
+	to := fs.String("to", "", "end date (YYYY-MM-DD)")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	data, path, _, err := loadDataAndReset()
+	if err != nil {
+		return err
+	}
+
+	fromValue, toValue, err := resolveStatsRange(*period, *from, *to)
+	if err != nil {
+		return err
+	}
+
+	stats, err := internal.BuildStats(path, data, fromValue, toValue)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Stats %s to %s\n", stats.From, stats.To)
+	fmt.Printf("Recorded days: %d\n", stats.RecordedDays)
+	fmt.Printf("Snapshots: %d\n", stats.TaskCount)
+	fmt.Printf("Done: %d (%dm)\n", stats.DoneCount, stats.DoneDuration)
+	fmt.Printf("Skipped: %d (%dm)\n", stats.SkippedCount, stats.SkippedDuration)
+	fmt.Printf("Todo: %d (%dm)\n", stats.TodoCount, stats.TodoDuration)
+	fmt.Printf("Completion rate: %.0f%%\n", stats.CompletionRate*100)
+
+	if len(stats.Tasks) > 0 {
+		fmt.Println("")
+		fmt.Println("Top tasks")
+		limit := min(5, len(stats.Tasks))
+		for i := 0; i < limit; i++ {
+			task := stats.Tasks[i]
+			fmt.Printf("- %s: done %d/%d days, skipped %d days\n", task.Title, task.DoneDays, task.RecordedDays, task.SkippedDays)
+		}
+	}
+
 	return nil
 }
 
@@ -475,8 +529,55 @@ func loadDataAndReset() (internal.Data, string, bool, error) {
 		return internal.Data{}, "", false, err
 	}
 
+	before := internal.CloneData(data)
 	reset := internal.ResetIfNewDay(&data)
+	if reset {
+		if err := internal.SaveDataWithHistory(path, before, data); err != nil {
+			return internal.Data{}, "", false, err
+		}
+	}
 	return data, path, reset, nil
+}
+
+func resolveStatsRange(period, from, to string) (string, string, error) {
+	if from != "" || to != "" {
+		if from == "" || to == "" {
+			return "", "", errors.New("from and to must be provided together")
+		}
+		if _, err := time.Parse("2006-01-02", from); err != nil {
+			return "", "", errors.New("from must be in YYYY-MM-DD format")
+		}
+		if _, err := time.Parse("2006-01-02", to); err != nil {
+			return "", "", errors.New("to must be in YYYY-MM-DD format")
+		}
+		if from > to {
+			return "", "", errors.New("from must be on or before to")
+		}
+		return from, to, nil
+	}
+
+	days, err := parseStatsPeriod(period)
+	if err != nil {
+		return "", "", err
+	}
+	end := time.Now()
+	start := end.AddDate(0, 0, -(days - 1))
+	return start.Format("2006-01-02"), end.Format("2006-01-02"), nil
+}
+
+func parseStatsPeriod(period string) (int, error) {
+	switch strings.TrimSpace(period) {
+	case "", "30d":
+		return 30, nil
+	case "7d":
+		return 7, nil
+	case "90d":
+		return 90, nil
+	case "365d":
+		return 365, nil
+	default:
+		return 0, errors.New("period must be one of 7d, 30d, 90d, 365d")
+	}
 }
 
 func parseID(id int, args []string) (int, error) {

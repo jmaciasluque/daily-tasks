@@ -14,6 +14,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 type mode int
@@ -201,6 +202,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.ensureReset()
 		return m, tick()
 	case syncResultMsg:
+		before := internal.CloneData(m.data)
 		if msg.result.Action == "error" {
 			m.statusMsg = fmt.Sprintf("Sync failed: %s", msg.result.Message)
 			return m, nil
@@ -209,7 +211,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.ensureReset()
 		m.applyTheme()
 		m.syncLists()
-		_ = internal.SaveData(m.dataPath, m.data)
+		_ = internal.SaveDataWithHistory(m.dataPath, before, m.data)
 		m.statusMsg = msg.result.Message
 		return m, nil
 	case pushResultMsg:
@@ -277,15 +279,17 @@ func (m model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.reloadFromDisk("Reloaded local data.")
 		return m, nil
 	case "t":
+		before := internal.CloneData(m.data)
 		m.data.ThemeIndex = (m.data.ThemeIndex + 1) % internal.ThemeCount()
 		m.applyTheme()
-		_ = internal.SaveData(m.dataPath, m.data)
+		_ = internal.SaveDataWithHistory(m.dataPath, before, m.data)
 		return m, nil
 	case "u":
+		before := internal.CloneData(m.data)
 		if m.undo() {
 			m.applyTheme()
 			m.syncLists()
-			_ = internal.SaveData(m.dataPath, m.data)
+			_ = internal.SaveDataWithHistory(m.dataPath, before, m.data)
 		}
 		return m, nil
 	case "e":
@@ -319,10 +323,11 @@ func (m model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.pushHistory()
+		before := internal.CloneData(m.data)
 		t.Status = "skipped"
 		t.Order = internal.NextOrder(&m.data, "skipped")
 		m.syncLists()
-		_ = internal.SaveData(m.dataPath, m.data)
+		_ = internal.SaveDataWithHistory(m.dataPath, before, m.data)
 		return m, nil
 	case "enter", " ":
 		t := m.selectedTask()
@@ -330,6 +335,7 @@ func (m model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.pushHistory()
+		before := internal.CloneData(m.data)
 		if t.Status == "todo" {
 			t.Status = "done"
 		} else {
@@ -337,40 +343,44 @@ func (m model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		t.Order = internal.NextOrder(&m.data, t.Status)
 		m.syncLists()
-		_ = internal.SaveData(m.dataPath, m.data)
+		_ = internal.SaveDataWithHistory(m.dataPath, before, m.data)
 		return m, nil
 	case "J":
 		m.pushHistory()
+		before := internal.CloneData(m.data)
 		if ok, taskIdx := m.moveTask(1); ok {
 			m.syncLists()
 			m.lists[m.focused].Select(taskIndexToListIndex(m.lists[m.focused].Items(), taskIdx))
-			_ = internal.SaveData(m.dataPath, m.data)
+			_ = internal.SaveDataWithHistory(m.dataPath, before, m.data)
 		}
 		return m, nil
 	case "K":
 		m.pushHistory()
+		before := internal.CloneData(m.data)
 		if ok, taskIdx := m.moveTask(-1); ok {
 			m.syncLists()
 			m.lists[m.focused].Select(taskIndexToListIndex(m.lists[m.focused].Items(), taskIdx))
-			_ = internal.SaveData(m.dataPath, m.data)
+			_ = internal.SaveDataWithHistory(m.dataPath, before, m.data)
 		}
 		return m, nil
 	case "H":
 		m.pushHistory()
+		before := internal.CloneData(m.data)
 		oldIdx := m.lists[m.focused].Index()
 		if ok, _ := m.moveTaskToCol((m.focused + 2) % 3); ok {
 			m.syncLists()
 			m.lists[m.focused].Select(internal.ClampIndex(oldIdx, len(m.lists[m.focused].Items())))
-			_ = internal.SaveData(m.dataPath, m.data)
+			_ = internal.SaveDataWithHistory(m.dataPath, before, m.data)
 		}
 		return m, nil
 	case "L":
 		m.pushHistory()
+		before := internal.CloneData(m.data)
 		oldIdx := m.lists[m.focused].Index()
 		if ok, _ := m.moveTaskToCol((m.focused + 1) % 3); ok {
 			m.syncLists()
 			m.lists[m.focused].Select(internal.ClampIndex(oldIdx, len(m.lists[m.focused].Items())))
-			_ = internal.SaveData(m.dataPath, m.data)
+			_ = internal.SaveDataWithHistory(m.dataPath, before, m.data)
 		}
 		return m, nil
 	}
@@ -434,6 +444,7 @@ func (m model) updateEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.pushHistory()
+		before := internal.CloneData(m.data)
 		if m.mode == modeAdd {
 			m.data.Tasks = append(m.data.Tasks, internal.Task{
 				ID:       m.data.NextID,
@@ -455,7 +466,7 @@ func (m model) updateEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.mode = modeNormal
 		m.errMsg = ""
 		m.syncLists()
-		_ = internal.SaveData(m.dataPath, m.data)
+		_ = internal.SaveDataWithHistory(m.dataPath, before, m.data)
 		return m, nil
 	}
 
@@ -473,11 +484,12 @@ func (m model) updateEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m model) updateDeleteConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "y", "Y":
+		before := internal.CloneData(m.data)
 		internal.DeleteTask(&m.data, m.editID)
 		m.mode = modeNormal
 		m.errMsg = ""
 		m.syncLists()
-		_ = internal.SaveData(m.dataPath, m.data)
+		_ = internal.SaveDataWithHistory(m.dataPath, before, m.data)
 		return m, nil
 	case "n", "N", "esc":
 		m.mode = modeNormal
@@ -489,6 +501,7 @@ func (m model) updateDeleteConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m model) View() string {
 	theme := m.currentTheme()
+	modal := m.renderModal()
 	header := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(lipgloss.Color(theme.Text)).
@@ -496,15 +509,10 @@ func (m model) View() string {
 
 	cols := lipgloss.JoinHorizontal(lipgloss.Top, m.renderList(0), m.renderList(1), m.renderList(2))
 	footer := m.renderFooter()
-	modal := m.renderModal()
 
 	content := lipgloss.NewStyle().
 		Padding(1, 2, 1, 2).
 		Render(lipgloss.JoinVertical(lipgloss.Left, header, cols, footer))
-
-	if modal != "" {
-		content = lipgloss.JoinVertical(lipgloss.Left, content, modal)
-	}
 
 	out := lipgloss.Place(
 		m.width,
@@ -519,7 +527,57 @@ func (m model) View() string {
 	if lines := strings.SplitN(out, "\n", m.height+1); len(lines) > m.height {
 		out = strings.Join(lines[:m.height], "\n")
 	}
+	if modal != "" {
+		out = overlayCentered(out, modal, m.width, m.height)
+	}
 	return out
+}
+
+func overlayCentered(base, overlay string, width, height int) string {
+	baseLines := normalizeLines(base, width, height)
+	overlayWidth := max(1, lipgloss.Width(overlay))
+	overlayLines := normalizeLines(overlay, overlayWidth, lipgloss.Height(overlay))
+	if len(overlayLines) == 0 {
+		return strings.Join(baseLines, "\n")
+	}
+
+	startRow := max(0, (height-len(overlayLines))/2)
+	startCol := max(0, (width-overlayWidth)/2)
+
+	for row, overlayLine := range overlayLines {
+		targetRow := startRow + row
+		if targetRow < 0 || targetRow >= len(baseLines) {
+			continue
+		}
+		prefix := ansi.Cut(baseLines[targetRow], 0, startCol)
+		suffix := ansi.Cut(baseLines[targetRow], startCol+overlayWidth, width)
+		baseLines[targetRow] = prefix + overlayLine + suffix
+	}
+
+	return strings.Join(baseLines, "\n")
+}
+
+func normalizeLines(s string, width, height int) []string {
+	if width <= 0 {
+		width = 1
+	}
+	lines := strings.Split(s, "\n")
+	if height > 0 && len(lines) < height {
+		for len(lines) < height {
+			lines = append(lines, "")
+		}
+	}
+
+	normalized := make([]string, len(lines))
+	for i, line := range lines {
+		truncated := ansi.Truncate(line, width, "")
+		lineWidth := ansi.StringWidth(truncated)
+		if lineWidth < width {
+			truncated += strings.Repeat(" ", width-lineWidth)
+		}
+		normalized[i] = truncated
+	}
+	return normalized
 }
 
 func (m model) renderList(idx int) string {
@@ -686,9 +744,10 @@ func (m *model) selectedTask() *internal.Task {
 }
 
 func (m *model) ensureReset() {
+	before := internal.CloneData(m.data)
 	if internal.ResetIfNewDay(&m.data) {
 		m.syncLists()
-		_ = internal.SaveData(m.dataPath, m.data)
+		_ = internal.SaveDataWithHistory(m.dataPath, before, m.data)
 	}
 }
 
@@ -704,8 +763,9 @@ func (m *model) reloadFromDisk(successMsg string) bool {
 		m.statusMsg = fmt.Sprintf("Reload failed: %s", err)
 		return false
 	}
+	before := internal.CloneData(data)
 	if internal.ResetIfNewDay(&data) {
-		if err := internal.SaveData(m.dataPath, data); err != nil {
+		if err := internal.SaveDataWithHistory(m.dataPath, before, data); err != nil {
 			m.statusMsg = fmt.Sprintf("Reload failed: %s", err)
 			return false
 		}

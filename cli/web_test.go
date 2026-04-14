@@ -116,3 +116,52 @@ func TestWebServerSyncRequiresConfig(t *testing.T) {
 		t.Fatalf("expected not configured error, got %q", payload.Error)
 	}
 }
+
+func TestWebServerStats(t *testing.T) {
+	tempDir := t.TempDir()
+	dataPath := tempDir + "/tasks.json"
+	server := testWebServer(dataPath)
+	t.Setenv("DAILY_TASKS_CONFIG", server.configPath)
+	if err := internal.SaveAppConfig(server.configPath, internal.AppConfig{Backend: internal.BackendLocal}); err != nil {
+		t.Fatalf("failed to seed config: %v", err)
+	}
+
+	before := internal.Data{
+		LastReset: "2026-04-07",
+		NextID:    3,
+		Tasks: []internal.Task{
+			{ID: 1, Title: "Workout", Duration: 30, Status: "done", Order: 1},
+			{ID: 2, Title: "Read", Duration: 20, Status: "todo", Order: 1},
+		},
+	}
+	after := internal.Data{
+		LastReset: "2026-04-08",
+		NextID:    3,
+		Tasks: []internal.Task{
+			{ID: 1, Title: "Workout", Duration: 30, Status: "todo", Order: 1},
+			{ID: 2, Title: "Read", Duration: 20, Status: "todo", Order: 2},
+		},
+	}
+	if err := internal.SaveDataWithHistory(dataPath, before, after); err != nil {
+		t.Fatalf("failed to seed history: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/stats?from=2026-04-07&to=2026-04-08", nil)
+	res := httptest.NewRecorder()
+	server.routes().ServeHTTP(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected GET /api/stats status 200, got %d", res.Code)
+	}
+
+	var payload webStatsResponse
+	if err := json.Unmarshal(res.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to decode stats response: %v", err)
+	}
+	if payload.Stats.RecordedDays != 2 {
+		t.Fatalf("expected 2 recorded days, got %d", payload.Stats.RecordedDays)
+	}
+	if payload.Stats.DoneCount != 1 || payload.Stats.TodoCount != 3 {
+		t.Fatalf("unexpected stats payload: %+v", payload.Stats)
+	}
+}
