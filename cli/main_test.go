@@ -90,3 +90,46 @@ func TestViewRendersEditOverlay(t *testing.T) {
 		t.Fatal("expected task list to remain visible behind overlay")
 	}
 }
+
+func TestViewRendersStatsScreenAndVersion(t *testing.T) {
+	data := internal.Data{
+		LastReset: "2026-04-14",
+		NextID:    2,
+		Tasks: []internal.Task{
+			{ID: 1, Title: "Meditate", Duration: 5, Status: "done", Order: 1, Deadline: "06:40"},
+		},
+	}
+
+	m := newModel(data, t.TempDir()+"/tasks.json")
+	m.width = 120
+	m.height = 32
+	m.screen = screenStats
+	m.refreshStats()
+
+	view := ansi.Strip(m.View())
+	if !strings.Contains(view, "Daily Tasks v") {
+		t.Fatal("expected version in TUI header")
+	}
+	if !strings.Contains(view, "Stats") {
+		t.Fatal("expected stats screen title in view output")
+	}
+	if !strings.Contains(view, "version: ") {
+		t.Fatal("expected version in footer output")
+	}
+	if !strings.Contains(view, "Recorded Days") {
+		t.Fatal("expected stats cards in view output")
+	}
+}
+
+func TestCycleStatsPeriodWraps(t *testing.T) {
+	m := newModel(internal.Data{LastReset: "2026-04-14", NextID: 1}, t.TempDir()+"/tasks.json")
+	m.statsPeriod = 0
+	m.cycleStatsPeriod(-1)
+	if m.statsPeriod != len(statsPeriods)-1 {
+		t.Fatalf("expected wrap to last period, got %d", m.statsPeriod)
+	}
+	m.cycleStatsPeriod(1)
+	if m.statsPeriod != 0 {
+		t.Fatalf("expected wrap back to first period, got %d", m.statsPeriod)
+	}
+}

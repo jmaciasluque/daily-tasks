@@ -26,6 +26,15 @@ const (
 	modeDeleteConfirm
 )
 
+type screen int
+
+const (
+	screenTasks screen = iota
+	screenStats
+)
+
+var statsPeriods = []string{"7d", "30d", "90d", "365d"}
+
 type taskItem struct {
 	id       int
 	title    string
@@ -100,6 +109,10 @@ type model struct {
 	statusMsg     string
 	lastChecked   string
 	history       []internal.Data
+	screen        screen
+	statsPeriod   int
+	statsSummary  internal.StatsSummary
+	statsErr      string
 }
 
 func main() {
@@ -168,6 +181,8 @@ func newModel(data internal.Data, path string) model {
 		lists:         [3]list.Model{todoList, doneList, skippedList},
 		focused:       0,
 		mode:          modeNormal,
+		screen:        screenTasks,
+		statsPeriod:   1,
 		titleInput:    title,
 		durInput:      dur,
 		deadlineInput: deadline,
@@ -175,6 +190,7 @@ func newModel(data internal.Data, path string) model {
 		height:        24,
 	}
 	m.ensureReset()
+	m.refreshStats()
 	m.applyTheme()
 	m.resizeLists()
 	m.syncLists()
@@ -200,6 +216,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tickMsg:
 		m.ensureReset()
+		m.refreshStats()
 		return m, tick()
 	case syncResultMsg:
 		before := internal.CloneData(m.data)
@@ -209,6 +226,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.data = internal.NormalizeData(msg.result.Data)
 		m.ensureReset()
+		m.refreshStats()
 		m.applyTheme()
 		m.syncLists()
 		_ = internal.SaveDataWithHistory(m.dataPath, before, m.data)
@@ -242,18 +260,53 @@ func (m model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+c", "q":
 		return m, tea.Quit
 	case "tab":
+		if m.screen == screenStats {
+			return m, nil
+		}
 		m.focused = (m.focused + 1) % 3
 		return m, nil
 	case "shift+tab":
+		if m.screen == screenStats {
+			return m, nil
+		}
 		m.focused = (m.focused + 2) % 3
 		return m, nil
 	case "h":
+		if m.screen == screenStats {
+			m.cycleStatsPeriod(-1)
+			return m, nil
+		}
 		m.focused = (m.focused + 2) % 3
 		return m, nil
 	case "l":
+		if m.screen == screenStats {
+			m.cycleStatsPeriod(1)
+			return m, nil
+		}
 		m.focused = (m.focused + 1) % 3
 		return m, nil
+	case "g":
+		if m.screen == screenTasks {
+			m.screen = screenStats
+			m.refreshStats()
+		} else {
+			m.screen = screenTasks
+		}
+		return m, nil
+	case "[":
+		if m.screen == screenStats {
+			m.cycleStatsPeriod(-1)
+		}
+		return m, nil
+	case "]":
+		if m.screen == screenStats {
+			m.cycleStatsPeriod(1)
+		}
+		return m, nil
 	case "a":
+		if m.screen != screenTasks {
+			return m, nil
+		}
 		m.mode = modeAdd
 		m.errMsg = ""
 		m.titleInput.SetValue("")
@@ -293,6 +346,9 @@ func (m model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "e":
+		if m.screen != screenTasks {
+			return m, nil
+		}
 		t := m.selectedTask()
 		if t == nil {
 			return m, nil
@@ -308,6 +364,9 @@ func (m model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.deadlineInput.Blur()
 		return m, nil
 	case "d":
+		if m.screen != screenTasks {
+			return m, nil
+		}
 		t := m.selectedTask()
 		if t == nil {
 			return m, nil
@@ -318,6 +377,9 @@ func (m model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.editID = t.ID
 		return m, nil
 	case "s":
+		if m.screen != screenTasks {
+			return m, nil
+		}
 		t := m.selectedTask()
 		if t == nil || t.Status != "todo" {
 			return m, nil
@@ -326,10 +388,14 @@ func (m model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		before := internal.CloneData(m.data)
 		t.Status = "skipped"
 		t.Order = internal.NextOrder(&m.data, "skipped")
+		m.refreshStats()
 		m.syncLists()
 		_ = internal.SaveDataWithHistory(m.dataPath, before, m.data)
 		return m, nil
 	case "enter", " ":
+		if m.screen != screenTasks {
+			return m, nil
+		}
 		t := m.selectedTask()
 		if t == nil {
 			return m, nil
@@ -342,42 +408,59 @@ func (m model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			t.Status = "todo"
 		}
 		t.Order = internal.NextOrder(&m.data, t.Status)
+		m.refreshStats()
 		m.syncLists()
 		_ = internal.SaveDataWithHistory(m.dataPath, before, m.data)
 		return m, nil
 	case "J":
+		if m.screen != screenTasks {
+			return m, nil
+		}
 		m.pushHistory()
 		before := internal.CloneData(m.data)
 		if ok, taskIdx := m.moveTask(1); ok {
+			m.refreshStats()
 			m.syncLists()
 			m.lists[m.focused].Select(taskIndexToListIndex(m.lists[m.focused].Items(), taskIdx))
 			_ = internal.SaveDataWithHistory(m.dataPath, before, m.data)
 		}
 		return m, nil
 	case "K":
+		if m.screen != screenTasks {
+			return m, nil
+		}
 		m.pushHistory()
 		before := internal.CloneData(m.data)
 		if ok, taskIdx := m.moveTask(-1); ok {
+			m.refreshStats()
 			m.syncLists()
 			m.lists[m.focused].Select(taskIndexToListIndex(m.lists[m.focused].Items(), taskIdx))
 			_ = internal.SaveDataWithHistory(m.dataPath, before, m.data)
 		}
 		return m, nil
 	case "H":
+		if m.screen != screenTasks {
+			return m, nil
+		}
 		m.pushHistory()
 		before := internal.CloneData(m.data)
 		oldIdx := m.lists[m.focused].Index()
 		if ok, _ := m.moveTaskToCol((m.focused + 2) % 3); ok {
+			m.refreshStats()
 			m.syncLists()
 			m.lists[m.focused].Select(internal.ClampIndex(oldIdx, len(m.lists[m.focused].Items())))
 			_ = internal.SaveDataWithHistory(m.dataPath, before, m.data)
 		}
 		return m, nil
 	case "L":
+		if m.screen != screenTasks {
+			return m, nil
+		}
 		m.pushHistory()
 		before := internal.CloneData(m.data)
 		oldIdx := m.lists[m.focused].Index()
 		if ok, _ := m.moveTaskToCol((m.focused + 1) % 3); ok {
+			m.refreshStats()
 			m.syncLists()
 			m.lists[m.focused].Select(internal.ClampIndex(oldIdx, len(m.lists[m.focused].Items())))
 			_ = internal.SaveDataWithHistory(m.dataPath, before, m.data)
@@ -465,6 +548,7 @@ func (m model) updateEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.mode = modeNormal
 		m.errMsg = ""
+		m.refreshStats()
 		m.syncLists()
 		_ = internal.SaveDataWithHistory(m.dataPath, before, m.data)
 		return m, nil
@@ -488,6 +572,7 @@ func (m model) updateDeleteConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		internal.DeleteTask(&m.data, m.editID)
 		m.mode = modeNormal
 		m.errMsg = ""
+		m.refreshStats()
 		m.syncLists()
 		_ = internal.SaveDataWithHistory(m.dataPath, before, m.data)
 		return m, nil
@@ -505,14 +590,17 @@ func (m model) View() string {
 	header := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(lipgloss.Color(theme.Text)).
-		Render("Daily Tasks")
+		Render(fmt.Sprintf("Daily Tasks v%s", internal.Version))
 
-	cols := lipgloss.JoinHorizontal(lipgloss.Top, m.renderList(0), m.renderList(1), m.renderList(2))
+	body := m.renderTasksView()
+	if m.screen == screenStats {
+		body = m.renderStatsView()
+	}
 	footer := m.renderFooter()
 
 	content := lipgloss.NewStyle().
 		Padding(1, 2, 1, 2).
-		Render(lipgloss.JoinVertical(lipgloss.Left, header, cols, footer))
+		Render(lipgloss.JoinVertical(lipgloss.Left, header, body, footer))
 
 	out := lipgloss.Place(
 		m.width,
@@ -623,13 +711,16 @@ func (m model) renderFooter() string {
 		return ""
 	}
 	theme := m.currentTheme()
-	help := fmt.Sprintf("a:add  e:edit  d:delete  s:skip  space:toggle  J/K:reorder  H/L:move  R:reload  r:sync  p:push  t:theme (%s)  tab:switch  q:quit", theme.Name)
+	help := fmt.Sprintf("g:stats  [:prev  ]:next  a:add  e:edit  d:delete  s:skip  space:toggle  J/K:reorder  H/L:move  R:reload  r:sync  p:push  t:theme (%s)  tab:switch  q:quit", theme.Name)
+	if m.screen == screenStats {
+		help = fmt.Sprintf("g:tasks  [:prev  ]:next  h/l:range  t:theme (%s)  R:reload  r:sync  p:push  q:quit", theme.Name)
+	}
 	helpLine := lipgloss.NewStyle().
 		Foreground(lipgloss.Color(theme.Muted)).
 		Render(help)
 	pathLine := lipgloss.NewStyle().
 		Foreground(lipgloss.Color(theme.Muted)).
-		Render(fmt.Sprintf("data: %s", m.dataPath))
+		Render(fmt.Sprintf("version: %s  data: %s", internal.Version, m.dataPath))
 	if m.statusMsg == "" {
 		return lipgloss.NewStyle().PaddingTop(1).Render(helpLine + "\n" + pathLine)
 	}
@@ -731,6 +822,120 @@ func (m *model) syncLists() {
 	m.lists[2].SetItems(skippedItems)
 }
 
+func (m model) renderTasksView() string {
+	return lipgloss.JoinHorizontal(lipgloss.Top, m.renderList(0), m.renderList(1), m.renderList(2))
+}
+
+func (m model) renderStatsView() string {
+	theme := m.currentTheme()
+	panelWidth := max(60, m.width-8)
+	if panelWidth > m.width-4 {
+		panelWidth = m.width - 4
+	}
+	innerWidth := max(40, panelWidth-8)
+	boxStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color(theme.Border)).
+		Background(lipgloss.Color(theme.PanelBg)).
+		Padding(1, 2).
+		Width(panelWidth)
+
+	period := statsPeriods[m.statsPeriod]
+	title := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color(theme.Text)).
+		Background(lipgloss.Color(theme.PanelBg)).
+		Width(innerWidth).
+		Render(fmt.Sprintf("Stats  %s  (%s to %s)", period, m.statsSummary.From, m.statsSummary.To))
+	divider := lipgloss.NewStyle().
+		Foreground(lipgloss.Color(theme.Border)).
+		Background(lipgloss.Color(theme.PanelBg)).
+		Render(strings.Repeat("─", innerWidth))
+
+	if m.statsErr != "" {
+		return boxStyle.Render(lipgloss.JoinVertical(lipgloss.Left,
+			title,
+			divider,
+			"",
+			lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Accent)).Render(m.statsErr),
+		))
+	}
+
+	summary := lipgloss.NewStyle().
+		Width(innerWidth).
+		Background(lipgloss.Color(theme.PanelBg)).
+		Foreground(lipgloss.Color(theme.Text)).
+		Render(strings.Join([]string{
+			renderMetric("Recorded Days", fmt.Sprintf("%d", m.statsSummary.RecordedDays)),
+			renderMetric("Completion", fmt.Sprintf("%.0f%%", m.statsSummary.CompletionRate*100)),
+			renderMetric("Done Time", formatMinutes(m.statsSummary.DoneDuration)),
+			renderMetric("Snapshots", fmt.Sprintf("%d", m.statsSummary.TaskCount)),
+		}, "   "))
+
+	dailyLines := []string{"Daily activity"}
+	for _, day := range tailDaily(m.statsSummary.Daily, 7) {
+		dailyLines = append(dailyLines, fmt.Sprintf("%s %s D:%d S:%d T:%d",
+			day.Date,
+			barForDay(day, 18),
+			day.DoneCount,
+			day.SkippedCount,
+			day.TodoCount,
+		))
+	}
+	if len(m.statsSummary.Daily) == 0 {
+		dailyLines = append(dailyLines, "No history recorded yet.")
+	}
+
+	taskLines := []string{"Top tasks"}
+	for _, task := range topTasks(m.statsSummary.Tasks, 5) {
+		taskLines = append(taskLines, fmt.Sprintf("%s  done %d/%d  skipped %d  %s",
+			task.Title,
+			task.DoneDays,
+			task.RecordedDays,
+			task.SkippedDays,
+			formatMinutes(task.DoneDuration),
+		))
+	}
+	if len(m.statsSummary.Tasks) == 0 {
+		taskLines = append(taskLines, "No task history recorded yet.")
+	}
+
+	dailyBlock := lipgloss.NewStyle().
+		Width(innerWidth).
+		Background(lipgloss.Color(theme.PanelBg)).
+		Foreground(lipgloss.Color(theme.Text)).
+		Render(strings.Join(dailyLines, "\n"))
+
+	taskBlock := lipgloss.NewStyle().
+		Width(innerWidth).
+		Background(lipgloss.Color(theme.PanelBg)).
+		Foreground(lipgloss.Color(theme.Text)).
+		Render(strings.Join(taskLines, "\n"))
+
+	ranges := lipgloss.NewStyle().
+		Width(innerWidth).
+		Background(lipgloss.Color(theme.PanelBg)).
+		Foreground(lipgloss.Color(theme.Muted)).
+		Render("Ranges: 7d / 30d / 90d / 365d  with [ ] or h/l")
+
+	return boxStyle.Render(lipgloss.JoinVertical(lipgloss.Left,
+		title,
+		divider,
+		"",
+		summary,
+		"",
+		dailyBlock,
+		"",
+		taskBlock,
+		"",
+		ranges,
+	))
+}
+
+func renderMetric(label, value string) string {
+	return fmt.Sprintf("%s %s", label+":", value)
+}
+
 func (m *model) selectedTask() *internal.Task {
 	items := m.lists[m.focused].Items()
 	if len(items) == 0 {
@@ -746,6 +951,7 @@ func (m *model) selectedTask() *internal.Task {
 func (m *model) ensureReset() {
 	before := internal.CloneData(m.data)
 	if internal.ResetIfNewDay(&m.data) {
+		m.refreshStats()
 		m.syncLists()
 		_ = internal.SaveDataWithHistory(m.dataPath, before, m.data)
 	}
@@ -772,6 +978,7 @@ func (m *model) reloadFromDisk(successMsg string) bool {
 	}
 
 	m.data = data
+	m.refreshStats()
 	m.applyTheme()
 	m.syncLists()
 	for i := range m.lists {
@@ -798,7 +1005,81 @@ func (m *model) undo() bool {
 	last := m.history[len(m.history)-1]
 	m.history = m.history[:len(m.history)-1]
 	m.data = internal.CloneData(last)
+	m.refreshStats()
 	return true
+}
+
+func (m *model) cycleStatsPeriod(delta int) {
+	count := len(statsPeriods)
+	m.statsPeriod = (m.statsPeriod + delta + count) % count
+	m.refreshStats()
+}
+
+func (m *model) refreshStats() {
+	from, to := tuiStatsRange(statsPeriods[m.statsPeriod])
+	stats, err := internal.BuildStats(m.dataPath, m.data, from, to)
+	if err != nil {
+		m.statsErr = fmt.Sprintf("Stats failed: %s", err)
+		m.statsSummary = internal.StatsSummary{From: from, To: to}
+		return
+	}
+	m.statsErr = ""
+	m.statsSummary = stats
+}
+
+func tuiStatsRange(period string) (string, string) {
+	days := 30
+	switch period {
+	case "7d":
+		days = 7
+	case "90d":
+		days = 90
+	case "365d":
+		days = 365
+	}
+	end := time.Now()
+	start := end.AddDate(0, 0, -(days - 1))
+	return start.Format("2006-01-02"), end.Format("2006-01-02")
+}
+
+func formatMinutes(minutes int) string {
+	if minutes < 60 {
+		return fmt.Sprintf("%dm", minutes)
+	}
+	hours := minutes / 60
+	rest := minutes % 60
+	if rest == 0 {
+		return fmt.Sprintf("%dh", hours)
+	}
+	return fmt.Sprintf("%dh %dm", hours, rest)
+}
+
+func tailDaily(days []internal.DailyStats, limit int) []internal.DailyStats {
+	if len(days) <= limit {
+		return days
+	}
+	return days[len(days)-limit:]
+}
+
+func topTasks(tasks []internal.TaskFrequencyStats, limit int) []internal.TaskFrequencyStats {
+	if len(tasks) <= limit {
+		return tasks
+	}
+	return tasks[:limit]
+}
+
+func barForDay(day internal.DailyStats, width int) string {
+	total := day.TaskCount
+	if total <= 0 || width <= 0 {
+		return strings.Repeat(" ", width)
+	}
+	doneWidth := max(0, day.DoneCount*width/total)
+	skippedWidth := max(0, day.SkippedCount*width/total)
+	todoWidth := max(0, width-doneWidth-skippedWidth)
+	if doneWidth+skippedWidth+todoWidth < width {
+		todoWidth += width - (doneWidth + skippedWidth + todoWidth)
+	}
+	return strings.Repeat("#", doneWidth) + strings.Repeat("+", skippedWidth) + strings.Repeat(".", todoWidth)
 }
 
 func (m model) currentTheme() internal.Theme {

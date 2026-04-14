@@ -10,6 +10,29 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 
 ---
 
+## [0.5.0] - 2026-04-14
+
+### CLI
+
+#### Added
+- Added a stats screen to the interactive TUI, with a `g` toggle between tasks
+  and stats plus quick range switching for `7d`, `30d`, `90d`, and `365d`
+- Added terminal-native stats summaries for recorded days, completion rate,
+  durations, daily activity bars, and top recurring tasks
+- The TUI now shows the app version directly in the header and footer
+
+#### Changed
+- Stats refresh in-session after task mutations, reloads, sync, undo, and daily
+  reset so the dashboard stays current without restarting the CLI
+
+### Testing
+
+#### Added
+- Added CLI view tests covering stats-screen rendering, visible version labels,
+  and stats-range cycling behavior
+
+---
+
 ## [0.4.0] - 2026-04-08
 
 ### CLI
