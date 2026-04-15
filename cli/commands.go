@@ -399,15 +399,21 @@ func runSync(args []string) error {
 	if err != nil {
 		return err
 	}
+	history, err := internal.LoadHistory(path)
+	if err != nil {
+		return err
+	}
 
-	result := internal.SyncWithRemote(settings, data)
+	result := internal.SyncStateWithRemote(settings, data, history)
 	if result.Action == "error" {
 		return errors.New(result.Message)
 	}
 
-	before := internal.CloneData(data)
 	data = internal.NormalizeData(result.Data)
-	if err := internal.SaveDataWithHistory(path, before, data); err != nil {
+	if err := internal.SaveData(path, data); err != nil {
+		return err
+	}
+	if err := internal.SaveHistory(path, result.History); err != nil {
 		return err
 	}
 	fmt.Println(result.Message)
@@ -425,7 +431,7 @@ func runPush(args []string) error {
 		return err
 	}
 
-	data, _, reset, err := loadDataAndReset()
+	data, path, reset, err := loadDataAndReset()
 	if err != nil {
 		return err
 	}
@@ -435,7 +441,11 @@ func runPush(args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := internal.PushRemoteData(settings, data); err != nil {
+	history, err := internal.LoadHistory(path)
+	if err != nil {
+		return err
+	}
+	if err := internal.PushRemoteState(settings, data, history); err != nil {
 		return err
 	}
 	fmt.Println("Pushed local data")

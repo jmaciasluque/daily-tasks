@@ -1,20 +1,40 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { AppConfig, Data, Settings, Task, TaskStatus } from '../types';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { AppConfig, Data, History, Settings, Task, TaskStatus } from '../types';
 import { emptyData, normalizeData, resetIfNeeded, nextOrder } from '../services/data';
-import { loadAppConfig, saveAppConfig, loadCachedData, saveCachedData, nextcloudSettingsFromConfig } from '../services/storage';
-import { isSettingsComplete, pushRemoteData, syncWithRemote } from '../services/webdav';
+import { applyDailyResetWithHistory, emptyHistory, normalizeHistory, recordDataChange } from '../services/history';
+import {
+  loadAppConfig,
+  saveAppConfig,
+  loadCachedData,
+  saveCachedData,
+  loadCachedHistory,
+  saveCachedHistory,
+  nextcloudSettingsFromConfig,
+} from '../services/storage';
+import { isSettingsComplete, pushRemoteState, syncWithRemoteState } from '../services/webdav';
 import { rescheduleAllNotifications } from '../services/notifications';
 import { appVariant } from '../config/env';
 
 export function useTaskData() {
   const [data, setData] = useState<Data>(emptyData());
+  const [history, setHistory] = useState<History>(emptyHistory());
   const [config, setConfigState] = useState<AppConfig>({});
   const [statusMsg, setStatusMsg] = useState('');
   const [syncing, setSyncing] = useState(false);
   const [initialized, setInitialized] = useState(false);
+  const dataRef = useRef(data);
+  const historyRef = useRef(history);
 
   const settings = useMemo(() => nextcloudSettingsFromConfig(config), [config]);
   const nextcloudConfigured = config.backend === 'nextcloud' && isSettingsComplete(settings);
+
+  useEffect(() => {
+    dataRef.current = data;
+  }, [data]);
+
+  useEffect(() => {
+    historyRef.current = history;
+  }, [history]);
 
   useEffect(() => {
     (async () => {
@@ -22,7 +42,13 @@ export function useTaskData() {
       setConfigState(loadedConfig);
 
       const cached = await loadCachedData();
-      setData(resetIfNeeded(cached));
+      const cachedHistory = await loadCachedHistory();
+      const normalizedHistory = normalizeHistory(cachedHistory);
+      const resetResult = applyDailyResetWithHistory(cached, normalizedHistory);
+      dataRef.current = resetResult.data;
+      historyRef.current = resetResult.history;
+      setData(resetResult.data);
+      setHistory(resetResult.history);
       setInitialized(true);
 
       if (appVariant !== 'production') {
@@ -34,9 +60,10 @@ export function useTaskData() {
   useEffect(() => {
     if (initialized) {
       saveCachedData(data);
+      saveCachedHistory(history);
       rescheduleAllNotifications(data.tasks);
     }
-  }, [data, initialized]);
+  }, [data, history, initialized]);
 
   const syncFromRemote = useCallback(async (overrideSettings?: Settings) => {
     const activeSettings = overrideSettings ?? settings;
@@ -48,10 +75,16 @@ export function useTaskData() {
     setSyncing(true);
     try {
       const latestLocal = await loadCachedData();
-      const result = await syncWithRemote(activeSettings, latestLocal);
+      const latestHistory = await loadCachedHistory();
+      const localReset = applyDailyResetWithHistory(latestLocal, latestHistory);
+      const result = await syncWithRemoteState(activeSettings, localReset.data, localReset.history);
       if (result.action !== 'error') {
-        const normalized = resetIfNeeded(normalizeData(result.data));
-        setData(normalized);
+        const synced = normalizeData(result.data);
+        const syncedReset = applyDailyResetWithHistory(synced, result.history, Date.now());
+        dataRef.current = syncedReset.data;
+        historyRef.current = syncedReset.history;
+        setHistory(syncedReset.history);
+        setData(syncedReset.data);
       }
       setStatusMsg(result.message);
     } catch (err) {
@@ -67,13 +100,13 @@ export function useTaskData() {
     }
   }, [initialized, nextcloudConfigured, settings.baseUrl, settings.username, settings.password, settings.remotePath, syncFromRemote]);
 
-  const pushToRemote = useCallback(async (dataToSave: Data) => {
+  const pushToRemote = useCallback(async (dataToSave: Data, historyToSave: History) => {
     if (!nextcloudConfigured) {
       return;
     }
 
     try {
-      await pushRemoteData(settings, dataToSave);
+      await pushRemoteState(settings, dataToSave, historyToSave);
       setStatusMsg('Saved to Nextcloud.');
     } catch (err) {
       setStatusMsg(`Save error: ${(err as Error).message}`);
@@ -81,17 +114,25 @@ export function useTaskData() {
   }, [nextcloudConfigured, settings]);
 
   const updateData = useCallback((updater: (prev: Data) => Data) => {
-    setData((prev) => {
-      const next = resetIfNeeded(normalizeData(updater(prev)));
-      next.last_modified = Date.now();
-      pushToRemote(next);
-      return next;
-    });
+    const before = dataRef.current;
+    const next = resetIfNeeded(normalizeData(updater(before)));
+    next.last_modified = Date.now();
+    const nextHistory = recordDataChange(historyRef.current, before, next, next.last_modified);
+    dataRef.current = next;
+    historyRef.current = nextHistory;
+    setHistory(nextHistory);
+    setData(next);
+    pushToRemote(next, nextHistory);
   }, [pushToRemote]);
 
   const reloadFromCache = useCallback(async () => {
     const cached = await loadCachedData();
-    setData(resetIfNeeded(cached));
+    const cachedHistory = await loadCachedHistory();
+    const resetResult = applyDailyResetWithHistory(cached, cachedHistory);
+    dataRef.current = resetResult.data;
+    historyRef.current = resetResult.history;
+    setHistory(resetResult.history);
+    setData(resetResult.data);
   }, []);
 
   const addTask = useCallback((title: string, duration: number, deadline?: string) => {
@@ -191,6 +232,7 @@ export function useTaskData() {
 
   return {
     data,
+    history,
     config,
     settings,
     backendConfigured: !!config.backend,

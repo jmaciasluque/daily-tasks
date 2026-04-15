@@ -235,8 +235,14 @@ func (s *webServer) handleSync(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, webErrorResponse{Error: err.Error()})
 		return
 	}
+	history, err := internal.LoadHistory(s.dataPath)
+	if err != nil {
+		s.mu.Unlock()
+		writeJSON(w, http.StatusInternalServerError, webErrorResponse{Error: err.Error()})
+		return
+	}
 
-	result := internal.SyncWithRemote(settings, data)
+	result := internal.SyncStateWithRemote(settings, data, history)
 	if result.Action == "error" {
 		state := s.stateResponse(result.Data, result.Message, result.Action)
 		s.mu.Unlock()
@@ -244,8 +250,12 @@ func (s *webServer) handleSync(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	before := internal.CloneData(data)
-	if err := internal.SaveDataWithHistory(s.dataPath, before, internal.NormalizeData(result.Data)); err != nil {
+	if err := internal.SaveData(s.dataPath, internal.NormalizeData(result.Data)); err != nil {
+		s.mu.Unlock()
+		writeJSON(w, http.StatusInternalServerError, webErrorResponse{Error: err.Error()})
+		return
+	}
+	if err := internal.SaveHistory(s.dataPath, result.History); err != nil {
 		s.mu.Unlock()
 		writeJSON(w, http.StatusInternalServerError, webErrorResponse{Error: err.Error()})
 		return

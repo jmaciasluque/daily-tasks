@@ -2,8 +2,8 @@ jest.mock('../config/env', () => ({
   defaultRemotePath: '/remote.php/dav/files/<username>/.daily-tasks.json',
 }));
 
-import { pollNextcloudLogin, startNextcloudLogin, syncWithRemote } from '../services/webdav';
-import type { Data, Settings } from '../types';
+import { pollNextcloudLogin, startNextcloudLogin, syncWithRemote, syncWithRemoteState } from '../services/webdav';
+import type { Data, History, Settings } from '../types';
 
 const settings: Settings = {
   baseUrl: 'https://cloud.example.com',
@@ -59,6 +59,79 @@ describe('syncWithRemote', () => {
     expect(result.action).toBe('pulled');
     expect(result.data.tasks[0].title).toBe('CLI newer task');
     expect(result.data.last_modified).toBe(1700001000000);
+  });
+});
+
+describe('syncWithRemoteState', () => {
+  const originalFetch = global.fetch;
+
+  afterEach(() => {
+    Object.defineProperty(global, 'fetch', {
+      configurable: true,
+      writable: true,
+      value: originalFetch,
+    });
+    jest.restoreAllMocks();
+  });
+
+  it('merges a remote shared history file alongside pulled data', async () => {
+    const localData: Data = {
+      last_reset: '2026-03-27',
+      next_id: 2,
+      tasks: [{ id: 1, title: 'Local stale task', duration: 5, status: 'todo', order: 1 }],
+      theme_index: 0,
+      last_modified: 1700000000000,
+    };
+    const localHistory: History = {
+      version: 1,
+      days: [],
+      events: [],
+    };
+
+    const fetchMock = jest.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          last_reset: '2026-03-27',
+          next_id: 2,
+          tasks: [{ id: 1, title: 'CLI newer task', duration: 5, status: 'todo', order: 1 }],
+          theme_index: 0,
+          last_modified: 1700001000,
+        }),
+      } as any)
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          version: 1,
+          days: [
+            {
+              date: '2026-03-26',
+              tasks: [{ id: 1, title: 'CLI newer task', duration: 5, status: 'done' }],
+            },
+          ],
+          events: [],
+        }),
+      } as any)
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+      } as any);
+
+    Object.defineProperty(global, 'fetch', {
+      configurable: true,
+      writable: true,
+      value: fetchMock,
+    });
+
+    const result = await syncWithRemoteState(settings, localData, localHistory);
+
+    expect(result.action).toBe('pulled');
+    expect(result.data.tasks[0].title).toBe('CLI newer task');
+    expect(result.history.days).toHaveLength(2);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock.mock.calls[1][0]).toContain('.daily-tasks.history.json');
   });
 });
 

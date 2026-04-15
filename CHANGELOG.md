@@ -10,6 +10,36 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 
 ---
 
+## [0.6.0] - 2026-04-15
+
+### Mobile
+
+#### Added
+- Added a dedicated Stats tab in the mobile app with preset `7d`, `30d`,
+  `90d`, and `365d` ranges plus summaries for recorded days, completion rate,
+  durations, daily activity bars, and top recurring tasks
+
+### Shared History
+
+#### Changed
+- Nextcloud sync now treats the sibling history file as shared data, merging and
+  pushing it alongside the main task file so CLI, web, and mobile stats stay in
+  sync instead of drifting per client
+
+### Mobile
+
+#### Changed
+- The mobile stats view now reads from the shared synced history stream while
+  still caching that history locally for offline use
+
+### Testing
+
+#### Added
+- Added mobile tests covering history snapshots, daily reset preservation, and
+  local stats aggregation
+
+---
+
 ## [0.5.0] - 2026-04-14
 
 ### CLI

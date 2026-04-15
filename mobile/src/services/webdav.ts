@@ -1,6 +1,7 @@
 import { encode as base64Encode } from 'base-64';
-import type { Data, Settings } from '../types';
+import type { Data, History, Settings } from '../types';
 import { normalizeData } from './data';
+import { emptyHistory, ensureHistorySnapshot, historyContentEqual, mergeHistories, normalizeHistory } from './history';
 import { defaultRemotePath } from '../config/env';
 
 export type LoginFlowSession = {
@@ -35,6 +36,24 @@ function buildWebdavUrl(settings: Settings): string {
   const base = settings.baseUrl.replace(/\/+$/, '');
   const path = settings.remotePath.startsWith('/') ? settings.remotePath : `/${settings.remotePath}`;
   return `${base}${path}`;
+}
+
+function buildHistoryRemotePath(remotePath: string): string {
+  const slash = remotePath.lastIndexOf('/');
+  const dir = slash >= 0 ? remotePath.slice(0, slash + 1) : '';
+  const name = slash >= 0 ? remotePath.slice(slash + 1) : remotePath;
+  const dot = name.lastIndexOf('.');
+  if (dot <= 0) {
+    return `${dir}${name}.history.json`;
+  }
+  return `${dir}${name.slice(0, dot)}.history${name.slice(dot)}`;
+}
+
+function buildHistoryWebdavUrl(settings: Settings): string {
+  const base = settings.baseUrl.replace(/\/+$/, '');
+  const historyPath = buildHistoryRemotePath(settings.remotePath);
+  const normalizedPath = historyPath.startsWith('/') ? historyPath : `/${historyPath}`;
+  return `${base}${normalizedPath}`;
 }
 
 function buildRemotePath(loginName: string): string {
@@ -125,6 +144,23 @@ export async function fetchRemoteData(settings: Settings): Promise<Data | null> 
   return res.json();
 }
 
+export async function fetchRemoteHistory(settings: Settings): Promise<History | null> {
+  const url = buildHistoryWebdavUrl(settings);
+  const res = await fetch(url, {
+    headers: {
+      Authorization: basicAuthHeader(settings),
+      Accept: 'application/json',
+    },
+  });
+  if (res.status === 404) {
+    return null;
+  }
+  if (!res.ok) {
+    throw new Error(`History fetch failed: ${res.status}`);
+  }
+  return normalizeHistory(await res.json());
+}
+
 export async function pushRemoteData(settings: Settings, data: Data): Promise<void> {
   const url = buildWebdavUrl(settings);
   const dataWithTimestamp = {
@@ -144,10 +180,60 @@ export async function pushRemoteData(settings: Settings, data: Data): Promise<vo
   }
 }
 
+export async function pushRemoteHistory(settings: Settings, history: History): Promise<void> {
+  const url = buildHistoryWebdavUrl(settings);
+  const payload = {
+    ...normalizeHistory(history),
+    updated_at: Date.now(),
+  };
+  const res = await fetch(url, {
+    method: 'PUT',
+    headers: {
+      Authorization: basicAuthHeader(settings),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload, null, 2),
+  });
+  if (!res.ok) {
+    throw new Error(`History save failed: ${res.status}`);
+  }
+}
+
+export async function pushRemoteState(settings: Settings, data: Data, history: History): Promise<void> {
+  await pushRemoteData(settings, data);
+  await pushRemoteHistory(settings, ensureHistorySnapshot(history, data));
+}
+
+export async function syncRemoteHistory(settings: Settings, localHistory: History, currentData: Data): Promise<History> {
+  const local = normalizeHistory(localHistory);
+  const remote = await fetchRemoteHistory(settings);
+  const merged = ensureHistorySnapshot(
+    mergeHistories(local, remote ?? emptyHistory()),
+    currentData,
+  );
+
+  if (!remote) {
+    if (merged.days.length > 0 || merged.events.length > 0) {
+      await pushRemoteHistory(settings, merged);
+    }
+    return merged;
+  }
+
+  if (!historyContentEqual(merged, remote)) {
+    await pushRemoteHistory(settings, merged);
+  }
+
+  return merged;
+}
+
 export type SyncResult = {
   data: Data;
   action: 'pulled' | 'pushed' | 'error' | 'in_sync';
   message: string;
+};
+
+export type SyncStateResult = SyncResult & {
+  history: History;
 };
 
 export async function syncWithRemote(settings: Settings, localData: Data): Promise<SyncResult> {
@@ -188,4 +274,23 @@ export async function syncWithRemote(settings: Settings, localData: Data): Promi
       message: `Sync error: ${(err as Error).message}` 
     };
   }
+}
+
+export async function syncWithRemoteState(
+  settings: Settings,
+  localData: Data,
+  localHistory: History,
+): Promise<SyncStateResult> {
+  const result = await syncWithRemote(settings, localData);
+  if (result.action === 'error') {
+    return { ...result, history: normalizeHistory(localHistory) };
+  }
+
+  const normalizedData = normalizeData(result.data);
+  const history = await syncRemoteHistory(settings, localHistory, normalizedData);
+  return {
+    ...result,
+    data: normalizedData,
+    history,
+  };
 }
