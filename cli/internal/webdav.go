@@ -102,7 +102,7 @@ func PushRemoteData(settings WebDAVSettings, data Data) error {
 // SyncResult represents the result of a sync operation
 type SyncResult struct {
 	Data     Data
-	Action   string // "pulled", "pushed", "conflict", "error"
+	Action   string // "pulled", "pushed", "in_sync", "error"
 	Message  string
 	Conflict bool
 }
@@ -142,7 +142,7 @@ func SyncWithRemote(settings WebDAVSettings, local Data) SyncResult {
 	}
 
 	// Same timestamp, no action needed
-	return SyncResult{Data: local, Action: "pulled", Message: "Already in sync"}
+	return SyncResult{Data: local, Action: "in_sync", Message: "Already in sync"}
 }
 
 // HasWebDAVConfig returns true if WebDAV is configured
