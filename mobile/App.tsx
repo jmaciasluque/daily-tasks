@@ -17,21 +17,40 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import DraggableFlatList from 'react-native-draggable-flatlist';
 
-import { TaskRow, TaskEditor, SettingsModal } from './src/components';
+import { StatsScreen, TaskRow, TaskEditor, SettingsModal } from './src/components';
 import { useTaskData } from './src/hooks/useTaskData';
 import { orderedTasks } from './src/services/data';
+import { buildStatsSummary } from './src/services/history';
 import { setupNotifications, handleNotificationAction, scheduleTestNotification } from './src/services/notifications';
 import { pollNextcloudLogin, startNextcloudLogin, type LoginFlowSession } from './src/services/webdav';
 import { getTheme, isLightColor } from './src/theme/themes';
 import type { Task, TaskStatus } from './src/types';
 import { appVariant, appVersionSuffix, appVersion, commitHash } from './src/config/env';
+import type { StatsPeriod } from './src/components/StatsScreen';
 
 const updateId = Updates.updateId ? Updates.updateId.slice(0, 7) : 'bundled';
 const updateChannel = Updates.channel ?? 'local';
+type Screen = 'tasks' | 'stats';
+
+function formatDateInput(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+function rangeForPeriod(period: StatsPeriod): { from: string; to: string } {
+  const end = new Date();
+  const days = period === '7d' ? 7 : period === '90d' ? 90 : period === '365d' ? 365 : 30;
+  const start = new Date(end);
+  start.setDate(end.getDate() - (days - 1));
+  return {
+    from: formatDateInput(start),
+    to: formatDateInput(end),
+  };
+}
 
 export default function App() {
   const {
     data,
+    history,
     config,
     settings,
     backendConfigured,
@@ -51,7 +70,9 @@ export default function App() {
     saveNextcloudSettings,
   } = useTaskData();
 
+  const [screen, setScreen] = useState<Screen>('tasks');
   const [activeStatus, setActiveStatus] = useState<TaskStatus>('todo');
+  const [statsPeriod, setStatsPeriod] = useState<StatsPeriod>('30d');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
@@ -63,6 +84,11 @@ export default function App() {
   const theme = useMemo(() => getTheme(data.theme_index), [data.theme_index]);
   const list = orderedTasks(data, activeStatus);
   const statusBarStyle = isLightColor(theme.bg) ? 'dark' : 'light';
+  const statsRange = useMemo(() => rangeForPeriod(statsPeriod), [statsPeriod]);
+  const stats = useMemo(
+    () => buildStatsSummary(history, data, statsRange.from, statsRange.to),
+    [data, history, statsRange.from, statsRange.to],
+  );
 
   useEffect(() => {
     if (!serverUrlInput && settings.baseUrl) {
@@ -325,6 +351,12 @@ export default function App() {
                   </Text>
                 </View>
                 <View style={styles.headerActions}>
+                  <Pressable onPress={() => setScreen('tasks')} style={[styles.smallButton, { borderColor: theme.border, backgroundColor: screen === 'tasks' ? theme.focusBg : theme.panelBg }]}>
+                    <Text style={{ color: theme.text }}>Tasks</Text>
+                  </Pressable>
+                  <Pressable onPress={() => setScreen('stats')} style={[styles.smallButton, { borderColor: theme.border, backgroundColor: screen === 'stats' ? theme.focusBg : theme.panelBg }]}>
+                    <Text style={{ color: theme.text }}>Stats</Text>
+                  </Pressable>
                   <Pressable onPress={cycleTheme} style={[styles.smallButton, { borderColor: theme.border }]}>
                     <Text style={{ color: theme.text }}>Theme</Text>
                   </Pressable>
@@ -334,98 +366,109 @@ export default function App() {
                 </View>
               </View>
 
-              <View style={styles.switcher}>
-                <Pressable
-                  onPress={() => setActiveStatus('todo')}
-                  style={[
-                    styles.switchButton,
-                    { backgroundColor: activeStatus === 'todo' ? theme.focusBg : theme.panelBg, borderColor: theme.border },
-                  ]}
-                >
-                  <Text style={{ color: theme.text, fontWeight: '600' }}>To Do ({todoCount})</Text>
-                </Pressable>
-                <Pressable
-                  onPress={() => setActiveStatus('done')}
-                  style={[
-                    styles.switchButton,
-                    { backgroundColor: activeStatus === 'done' ? theme.focusBg : theme.panelBg, borderColor: theme.border },
-                  ]}
-                >
-                  <Text style={{ color: theme.text, fontWeight: '600' }}>Done ({doneCount})</Text>
-                </Pressable>
-                <Pressable
-                  onPress={() => setActiveStatus('skipped')}
-                  style={[
-                    styles.switchButton,
-                    { backgroundColor: activeStatus === 'skipped' ? theme.focusBg : theme.panelBg, borderColor: theme.border },
-                  ]}
-                >
-                  <Text style={{ color: theme.muted, fontWeight: '600' }}>Skipped ({skippedCount})</Text>
-                </Pressable>
-              </View>
-
-              <View style={[styles.panel, { backgroundColor: theme.panelBg, borderColor: theme.border }]}>
-                {activeStatus === 'todo' ? (
-                  <DraggableFlatList
-                    data={list}
-                    keyExtractor={(item) => String(item.id)}
-                    contentContainerStyle={styles.listContent}
-                    onDragEnd={({ data }) => reorderTasks(data)}
-                    renderItem={({ item, drag, isActive }) => (
-                      <TaskRow
-                        task={item}
-                        theme={theme}
-                        drag={drag}
-                        isActive={isActive}
-                        onToggle={() => toggleTaskStatus(item)}
-                        onSkip={() => skipTask(item.id)}
-                        onEdit={() => openEdit(item)}
-                        onDelete={() => handleDeleteTask(item)}
-                      />
-                    )}
-                    ListEmptyComponent={
-                      <Text style={[styles.emptyText, { color: theme.muted }]}>No tasks.</Text>
-                    }
-                  />
-                ) : (
-                  <FlatList
-                    data={list}
-                    keyExtractor={(item) => String(item.id)}
-                    contentContainerStyle={styles.listContent}
-                    renderItem={({ item }) => (
-                      <TaskRow
-                        task={item}
-                        theme={theme}
-                        onToggle={() => toggleTaskStatus(item)}
-                        onSkip={() => skipTask(item.id)}
-                        onEdit={() => openEdit(item)}
-                        onDelete={() => handleDeleteTask(item)}
-                      />
-                    )}
-                    ListEmptyComponent={
-                      <Text style={[styles.emptyText, { color: theme.muted }]}>No tasks.</Text>
-                    }
-                  />
-                )}
-              </View>
-
-              <View style={styles.footer}>
-                <Pressable onPress={openAdd} style={[styles.primaryButton, styles.footerButton, { backgroundColor: theme.accent }]}>
-                  <Text style={styles.primaryButtonText}>Add Task</Text>
-                </Pressable>
-                <Pressable onPress={handleTestNotification} style={[styles.secondaryButton, styles.footerButton, { borderColor: theme.border }]}>
-                  <Text style={{ color: theme.text }}>Test Notif</Text>
-                </Pressable>
-                {nextcloudConfigured ? (
-                  <Pressable onPress={() => syncFromRemote()} style={[styles.secondaryButton, styles.footerButton, { borderColor: theme.border }]}>
-                    <Text style={{ color: theme.text }}>{syncing ? 'Syncing...' : 'Sync'}</Text>
-                  </Pressable>
-                ) : (
-                  <View style={[styles.secondaryButton, styles.footerButton, { borderColor: theme.border }]}>
-                    <Text style={{ color: theme.muted }}>Local Only</Text>
+              {screen === 'tasks' ? (
+                <>
+                  <View style={styles.switcher}>
+                    <Pressable
+                      onPress={() => setActiveStatus('todo')}
+                      style={[
+                        styles.switchButton,
+                        { backgroundColor: activeStatus === 'todo' ? theme.focusBg : theme.panelBg, borderColor: theme.border },
+                      ]}
+                    >
+                      <Text style={{ color: theme.text, fontWeight: '600' }}>To Do ({todoCount})</Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => setActiveStatus('done')}
+                      style={[
+                        styles.switchButton,
+                        { backgroundColor: activeStatus === 'done' ? theme.focusBg : theme.panelBg, borderColor: theme.border },
+                      ]}
+                    >
+                      <Text style={{ color: theme.text, fontWeight: '600' }}>Done ({doneCount})</Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => setActiveStatus('skipped')}
+                      style={[
+                        styles.switchButton,
+                        { backgroundColor: activeStatus === 'skipped' ? theme.focusBg : theme.panelBg, borderColor: theme.border },
+                      ]}
+                    >
+                      <Text style={{ color: theme.muted, fontWeight: '600' }}>Skipped ({skippedCount})</Text>
+                    </Pressable>
                   </View>
-                )}
-              </View>
+
+                  <View style={[styles.panel, { backgroundColor: theme.panelBg, borderColor: theme.border }]}>
+                    {activeStatus === 'todo' ? (
+                      <DraggableFlatList
+                        data={list}
+                        keyExtractor={(item) => String(item.id)}
+                        contentContainerStyle={styles.listContent}
+                        onDragEnd={({ data }) => reorderTasks(data)}
+                        renderItem={({ item, drag, isActive }) => (
+                          <TaskRow
+                            task={item}
+                            theme={theme}
+                            drag={drag}
+                            isActive={isActive}
+                            onToggle={() => toggleTaskStatus(item)}
+                            onSkip={() => skipTask(item.id)}
+                            onEdit={() => openEdit(item)}
+                            onDelete={() => handleDeleteTask(item)}
+                          />
+                        )}
+                        ListEmptyComponent={
+                          <Text style={[styles.emptyText, { color: theme.muted }]}>No tasks.</Text>
+                        }
+                      />
+                    ) : (
+                      <FlatList
+                        data={list}
+                        keyExtractor={(item) => String(item.id)}
+                        contentContainerStyle={styles.listContent}
+                        renderItem={({ item }) => (
+                          <TaskRow
+                            task={item}
+                            theme={theme}
+                            onToggle={() => toggleTaskStatus(item)}
+                            onSkip={() => skipTask(item.id)}
+                            onEdit={() => openEdit(item)}
+                            onDelete={() => handleDeleteTask(item)}
+                          />
+                        )}
+                        ListEmptyComponent={
+                          <Text style={[styles.emptyText, { color: theme.muted }]}>No tasks.</Text>
+                        }
+                      />
+                    )}
+                  </View>
+
+                  <View style={styles.footer}>
+                    <Pressable onPress={openAdd} style={[styles.primaryButton, styles.footerButton, { backgroundColor: theme.accent }]}>
+                      <Text style={styles.primaryButtonText}>Add Task</Text>
+                    </Pressable>
+                    <Pressable onPress={handleTestNotification} style={[styles.secondaryButton, styles.footerButton, { borderColor: theme.border }]}>
+                      <Text style={{ color: theme.text }}>Test Notif</Text>
+                    </Pressable>
+                    {nextcloudConfigured ? (
+                      <Pressable onPress={() => syncFromRemote()} style={[styles.secondaryButton, styles.footerButton, { borderColor: theme.border }]}>
+                        <Text style={{ color: theme.text }}>{syncing ? 'Syncing...' : 'Sync'}</Text>
+                      </Pressable>
+                    ) : (
+                      <View style={[styles.secondaryButton, styles.footerButton, { borderColor: theme.border }]}>
+                        <Text style={{ color: theme.muted }}>Local Only</Text>
+                      </View>
+                    )}
+                  </View>
+                </>
+              ) : (
+                <StatsScreen
+                  period={statsPeriod}
+                  stats={stats}
+                  theme={theme}
+                  onSelectPeriod={setStatsPeriod}
+                />
+              )}
 
               <Text style={[styles.status, { color: theme.muted }]}>
                 Backend: {config.backend === 'nextcloud' ? 'Nextcloud' : 'Local only'}
@@ -526,6 +569,8 @@ const styles = StyleSheet.create({
   headerActions: {
     flexDirection: 'row',
     gap: 8,
+    flexWrap: 'wrap',
+    justifyContent: 'flex-end',
   },
   title: {
     fontSize: 24,

@@ -10,6 +10,26 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 
 ---
 
+## [0.6.0] - 2026-04-15
+
+### Mobile
+
+#### Added
+- Added a dedicated Stats tab in the mobile app with preset `7d`, `30d`,
+  `90d`, and `365d` ranges plus summaries for recorded days, completion rate,
+  durations, daily activity bars, and top recurring tasks
+- Added mobile-side history persistence so task edits, status changes, deletes,
+  sync pulls, and daily resets feed the stats view instead of relying on the
+  current in-memory task list alone
+
+### Testing
+
+#### Added
+- Added mobile tests covering history snapshots, daily reset preservation, and
+  local stats aggregation
+
+---
+
 ## [0.5.0] - 2026-04-14
 
 ### CLI

@@ -1,12 +1,14 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import type { AppConfig, Data, Settings } from '../types';
+import type { AppConfig, Data, History, Settings } from '../types';
 import { defaultSettings } from './webdav';
 import { emptyData, normalizeData } from './data';
+import { emptyHistory, normalizeHistory } from './history';
 import { storagePrefix } from '../config/env';
 
 const STORAGE_SETTINGS = `${storagePrefix}Settings`;
 const STORAGE_BACKEND_CONFIG = `${storagePrefix}BackendConfig`;
 const STORAGE_CACHE = `${storagePrefix}Cache`;
+const STORAGE_HISTORY = `${storagePrefix}History`;
 
 type PersistedNextcloudConfig = {
   server_url?: string;
@@ -127,6 +129,26 @@ export async function loadCachedData(): Promise<Data> {
 export async function saveCachedData(data: Data): Promise<void> {
   try {
     await AsyncStorage.setItem(STORAGE_CACHE, JSON.stringify(data));
+  } catch {
+    // Ignore errors silently
+  }
+}
+
+export async function loadCachedHistory(): Promise<History> {
+  try {
+    const cached = await AsyncStorage.getItem(STORAGE_HISTORY);
+    if (cached) {
+      return normalizeHistory(JSON.parse(cached));
+    }
+  } catch {
+    // Ignore errors, return empty history
+  }
+  return emptyHistory();
+}
+
+export async function saveCachedHistory(history: History): Promise<void> {
+  try {
+    await AsyncStorage.setItem(STORAGE_HISTORY, JSON.stringify(history));
   } catch {
     // Ignore errors silently
   }
