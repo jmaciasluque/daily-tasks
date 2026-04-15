@@ -83,7 +83,7 @@ func (d taskDelegate) Render(w io.Writer, m list.Model, index int, item list.Ite
 type tickMsg time.Time
 
 type syncResultMsg struct {
-	result internal.SyncResult
+	result internal.SyncStateResult
 }
 
 type pushResultMsg struct {
@@ -219,7 +219,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.refreshStats()
 		return m, tick()
 	case syncResultMsg:
-		before := internal.CloneData(m.data)
 		if msg.result.Action == "error" {
 			m.statusMsg = fmt.Sprintf("Sync failed: %s", msg.result.Message)
 			return m, nil
@@ -229,7 +228,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.refreshStats()
 		m.applyTheme()
 		m.syncLists()
-		_ = internal.SaveDataWithHistory(m.dataPath, before, m.data)
+		_ = internal.SaveData(m.dataPath, m.data)
+		_ = internal.SaveHistory(m.dataPath, msg.result.History)
 		m.statusMsg = msg.result.Message
 		return m, nil
 	case pushResultMsg:
@@ -321,13 +321,13 @@ func (m model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.statusMsg = "Syncing from Nextcloud..."
-		return m, syncRemoteCmd(m.data)
+		return m, syncRemoteCmd(m.dataPath, m.data)
 	case "p":
 		if !m.reloadFromDisk("") {
 			return m, nil
 		}
 		m.statusMsg = "Pushing to Nextcloud..."
-		return m, pushRemoteCmd(m.data)
+		return m, pushRemoteCmd(m.dataPath, m.data)
 	case "R":
 		m.reloadFromDisk("Reloaded local data.")
 		return m, nil
@@ -1194,28 +1194,40 @@ func (m *model) moveTaskToCol(targetCol int) (bool, int) {
 	return true, 0
 }
 
-func syncRemoteCmd(localData internal.Data) tea.Cmd {
+func syncRemoteCmd(dataPath string, localData internal.Data) tea.Cmd {
 	return func() tea.Msg {
 		settings, err := internal.LoadWebDAVSettings()
 		if err != nil {
-			return syncResultMsg{result: internal.SyncResult{
+			return syncResultMsg{result: internal.SyncStateResult{
 				Data:    localData,
 				Action:  "error",
 				Message: err.Error(),
 			}}
 		}
-		result := internal.SyncWithRemote(settings, localData)
+		history, historyErr := internal.LoadHistory(dataPath)
+		if historyErr != nil {
+			return syncResultMsg{result: internal.SyncStateResult{
+				Data:    localData,
+				Action:  "error",
+				Message: historyErr.Error(),
+			}}
+		}
+		result := internal.SyncStateWithRemote(settings, localData, history)
 		return syncResultMsg{result: result}
 	}
 }
 
-func pushRemoteCmd(data internal.Data) tea.Cmd {
+func pushRemoteCmd(dataPath string, data internal.Data) tea.Cmd {
 	return func() tea.Msg {
 		settings, err := internal.LoadWebDAVSettings()
 		if err != nil {
 			return pushResultMsg{err: err}
 		}
-		err = internal.PushRemoteData(settings, data)
+		history, historyErr := internal.LoadHistory(dataPath)
+		if historyErr != nil {
+			return pushResultMsg{err: historyErr}
+		}
+		err = internal.PushRemoteState(settings, data, history)
 		return pushResultMsg{err: err}
 	}
 }

@@ -11,7 +11,7 @@ import {
   saveCachedHistory,
   nextcloudSettingsFromConfig,
 } from '../services/storage';
-import { isSettingsComplete, pushRemoteData, syncWithRemote } from '../services/webdav';
+import { isSettingsComplete, pushRemoteState, syncWithRemoteState } from '../services/webdav';
 import { rescheduleAllNotifications } from '../services/notifications';
 import { appVariant } from '../config/env';
 
@@ -77,12 +77,10 @@ export function useTaskData() {
       const latestLocal = await loadCachedData();
       const latestHistory = await loadCachedHistory();
       const localReset = applyDailyResetWithHistory(latestLocal, latestHistory);
-      const result = await syncWithRemote(activeSettings, localReset.data);
+      const result = await syncWithRemoteState(activeSettings, localReset.data, localReset.history);
       if (result.action !== 'error') {
         const synced = normalizeData(result.data);
-        const now = Date.now();
-        const recordedHistory = recordDataChange(localReset.history, localReset.data, synced, now);
-        const syncedReset = applyDailyResetWithHistory(synced, recordedHistory, now);
+        const syncedReset = applyDailyResetWithHistory(synced, result.history, Date.now());
         dataRef.current = syncedReset.data;
         historyRef.current = syncedReset.history;
         setHistory(syncedReset.history);
@@ -102,13 +100,13 @@ export function useTaskData() {
     }
   }, [initialized, nextcloudConfigured, settings.baseUrl, settings.username, settings.password, settings.remotePath, syncFromRemote]);
 
-  const pushToRemote = useCallback(async (dataToSave: Data) => {
+  const pushToRemote = useCallback(async (dataToSave: Data, historyToSave: History) => {
     if (!nextcloudConfigured) {
       return;
     }
 
     try {
-      await pushRemoteData(settings, dataToSave);
+      await pushRemoteState(settings, dataToSave, historyToSave);
       setStatusMsg('Saved to Nextcloud.');
     } catch (err) {
       setStatusMsg(`Save error: ${(err as Error).message}`);
@@ -124,7 +122,7 @@ export function useTaskData() {
     historyRef.current = nextHistory;
     setHistory(nextHistory);
     setData(next);
-    pushToRemote(next);
+    pushToRemote(next, nextHistory);
   }, [pushToRemote]);
 
   const reloadFromCache = useCallback(async () => {

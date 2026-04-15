@@ -1,8 +1,16 @@
 import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { Data } from '../types';
-import { loadAppConfig, loadCachedData, nextcloudSettingsFromConfig, saveCachedData } from './storage';
-import { isSettingsComplete, pushRemoteData } from './webdav';
+import {
+  loadAppConfig,
+  loadCachedData,
+  loadCachedHistory,
+  nextcloudSettingsFromConfig,
+  saveCachedData,
+  saveCachedHistory,
+} from './storage';
+import { recordDataChange } from './history';
+import { isSettingsComplete, pushRemoteState } from './webdav';
 
 const NOTIFICATION_IDS_KEY = 'dailyTasksNotificationIds';
 
@@ -46,7 +54,7 @@ function applyNotificationAction(
   };
 }
 
-export async function syncNotificationActionUpdate(data: Data): Promise<void> {
+export async function syncNotificationActionUpdate(data: Data, history: import('../types').History): Promise<void> {
   const config = await loadAppConfig();
   const settings = nextcloudSettingsFromConfig(config);
   if (config.backend !== 'nextcloud' || !isSettingsComplete(settings)) {
@@ -54,7 +62,7 @@ export async function syncNotificationActionUpdate(data: Data): Promise<void> {
   }
 
   try {
-    await pushRemoteData(settings, data);
+    await pushRemoteState(settings, data, history);
   } catch {
     // Keep the local change even if remote sync fails.
   }
@@ -110,19 +118,22 @@ export async function handleNotificationAction(
   response: Notifications.NotificationResponse,
 ): Promise<boolean> {
   const cached = await loadCachedData();
+  const cachedHistory = await loadCachedHistory();
   const updatedData = applyNotificationAction(cached, response);
 
   if (!updatedData) {
     return false;
   }
 
+  const updatedHistory = recordDataChange(cachedHistory, cached, updatedData, updatedData.last_modified || Date.now());
   await saveCachedData(updatedData);
+  await saveCachedHistory(updatedHistory);
   await dismissPresentedNotification(response);
   const taskId = response.notification.request.content.data?.taskId as number | undefined;
   if (taskId) {
     await cancelTaskNotification(taskId);
   }
-  await syncNotificationActionUpdate(updatedData);
+  await syncNotificationActionUpdate(updatedData, updatedHistory);
   return true;
 }
 

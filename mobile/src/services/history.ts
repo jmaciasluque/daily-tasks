@@ -55,6 +55,99 @@ export function normalizeHistory(input?: Partial<History> | null): History {
   return history;
 }
 
+export function ensureHistorySnapshot(historyInput: History, current: Data, now = Date.now()): History {
+  const history = normalizeHistory(historyInput);
+  const changed = upsertHistoryDay(history, normalizeData(cloneData(current)), now);
+  if (changed) {
+    history.updated_at = now;
+  }
+  sortHistory(history);
+  return history;
+}
+
+export function historyContentEqual(aInput: History, bInput: History): boolean {
+  const a = normalizeHistory(aInput);
+  const b = normalizeHistory(bInput);
+
+  if (a.version !== b.version || a.days.length !== b.days.length || a.events.length !== b.events.length) {
+    return false;
+  }
+
+  for (let i = 0; i < a.days.length; i += 1) {
+    if (!historyDayEqual(a.days[i], b.days[i])) {
+      return false;
+    }
+  }
+
+  for (let i = 0; i < a.events.length; i += 1) {
+    const left = a.events[i];
+    const right = b.events[i];
+    if (
+      left.timestamp !== right.timestamp ||
+      left.date !== right.date ||
+      left.type !== right.type ||
+      left.task_id !== right.task_id ||
+      left.title !== right.title ||
+      left.from_status !== right.from_status ||
+      left.to_status !== right.to_status ||
+      left.duration !== right.duration ||
+      left.deadline !== right.deadline
+    ) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+export function mergeHistories(localInput: History, remoteInput: History): History {
+  const local = normalizeHistory(localInput);
+  const remote = normalizeHistory(remoteInput);
+
+  const dayMap = new Map<string, HistoryDay>();
+  for (const day of [...local.days, ...remote.days]) {
+    const existing = dayMap.get(day.date);
+    if (!existing) {
+      dayMap.set(day.date, { ...day, tasks: day.tasks.map((task) => ({ ...task })) });
+      continue;
+    }
+
+    const existingUpdatedAt = existing.updated_at || 0;
+    const nextUpdatedAt = day.updated_at || 0;
+    if (nextUpdatedAt > existingUpdatedAt || (nextUpdatedAt === existingUpdatedAt && day.tasks.length >= existing.tasks.length)) {
+      dayMap.set(day.date, { ...day, tasks: day.tasks.map((task) => ({ ...task })) });
+    }
+  }
+
+  const eventMap = new Map<string, HistoryEvent>();
+  for (const event of [...local.events, ...remote.events]) {
+    const key = [
+      event.timestamp,
+      event.date,
+      event.type,
+      event.task_id,
+      event.title,
+      event.from_status || '',
+      event.to_status || '',
+      event.duration || 0,
+      event.deadline || '',
+    ].join('|');
+    if (!eventMap.has(key)) {
+      eventMap.set(key, { ...event });
+    }
+  }
+
+  const merged: History = {
+    version: Math.max(local.version || HISTORY_VERSION, remote.version || HISTORY_VERSION),
+    updated_at: Math.max(local.updated_at || 0, remote.updated_at || 0),
+    days: Array.from(dayMap.values()),
+    events: Array.from(eventMap.values()),
+  };
+
+  sortHistory(merged);
+  return merged;
+}
+
 export function recordDataChange(historyInput: History, before: Data, after: Data, now = Date.now()): History {
   const history = normalizeHistory(historyInput);
   const normalizedBefore = normalizeData(cloneData(before));
@@ -95,8 +188,7 @@ export function applyDailyResetWithHistory(dataInput: Data, historyInput: Histor
 }
 
 export function buildStatsSummary(historyInput: History, current: Data, from: string, to: string): StatsSummary {
-  const history = normalizeHistory(historyInput);
-  upsertHistoryDay(history, normalizeData(cloneData(current)), Date.now());
+  const history = ensureHistorySnapshot(historyInput, current, Date.now());
   return aggregateStats(history, from, to);
 }
 

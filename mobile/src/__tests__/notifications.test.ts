@@ -38,6 +38,7 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
 // Mock storage service so tests control what "cached" data looks like
 jest.mock('../services/storage', () => ({
   loadCachedData: jest.fn(),
+  loadCachedHistory: jest.fn().mockResolvedValue({ version: 1, days: [], events: [] }),
   loadAppConfig: jest.fn().mockResolvedValue({}),
   nextcloudSettingsFromConfig: jest.fn((config: {
     nextcloud?: {
@@ -54,6 +55,7 @@ jest.mock('../services/storage', () => ({
     ...(config.nextcloud ?? {}),
   })),
   saveCachedData: jest.fn().mockResolvedValue(undefined),
+  saveCachedHistory: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock('../services/webdav', () => ({
@@ -63,14 +65,14 @@ jest.mock('../services/webdav', () => ({
     password?: string;
     remotePath?: string;
   }) => !!(settings.baseUrl && settings.username && settings.password && settings.remotePath)),
-  pushRemoteData: jest.fn().mockResolvedValue(undefined),
+  pushRemoteState: jest.fn().mockResolvedValue(undefined),
 }));
 
 import * as Notifications from 'expo-notifications';
 import * as TaskManager from 'expo-task-manager';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { loadAppConfig, loadCachedData, saveCachedData } from '../services/storage';
-import { pushRemoteData } from '../services/webdav';
+import { pushRemoteState } from '../services/webdav';
 import {
   setupNotifications,
   rescheduleAllNotifications,
@@ -86,7 +88,7 @@ import type { Data, Task } from '../types';
 const mockLoadCachedData = loadCachedData as jest.MockedFunction<typeof loadCachedData>;
 const mockLoadAppConfig = loadAppConfig as jest.MockedFunction<typeof loadAppConfig>;
 const mockSaveCachedData = saveCachedData as jest.MockedFunction<typeof saveCachedData>;
-const mockPushRemoteData = pushRemoteData as jest.Mock;
+const mockPushRemoteState = pushRemoteState as jest.Mock;
 const mockSchedule = Notifications.scheduleNotificationAsync as jest.Mock;
 const mockSetChannel = Notifications.setNotificationChannelAsync as jest.Mock;
 const mockCancelAll = Notifications.cancelAllScheduledNotificationsAsync as jest.Mock;
@@ -277,8 +279,8 @@ describe('handleNotificationAction', () => {
 
     await handleNotificationAction(makeResponse('done', 1));
 
-    expect(mockPushRemoteData).toHaveBeenCalledTimes(1);
-    const pushed = mockPushRemoteData.mock.calls[0][1] as Data;
+    expect(mockPushRemoteState).toHaveBeenCalledTimes(1);
+    const pushed = mockPushRemoteState.mock.calls[0][1] as Data;
     expect(pushed.tasks.find(t => t.id === 1)?.status).toBe('done');
   });
 
@@ -295,7 +297,7 @@ describe('handleNotificationAction', () => {
         remotePath: '/remote.php/dav/files/user/.daily-tasks.json',
       },
     });
-    mockPushRemoteData.mockRejectedValueOnce(new Error('network down'));
+    mockPushRemoteState.mockRejectedValueOnce(new Error('network down'));
 
     const result = await handleNotificationAction(makeResponse('skip', 1));
 

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -127,6 +128,104 @@ func SaveHistory(dataPath string, history History) error {
 	return os.WriteFile(HistoryPath(dataPath), b, 0o600)
 }
 
+func HistoryWithCurrentSnapshot(history History, data Data, now int64) History {
+	normalized := NormalizeData(data)
+	if now == 0 {
+		now = time.Now().UnixMilli()
+	}
+	if history.Version == 0 {
+		history.Version = historyVersion
+	}
+	if upsertHistoryDay(&history, normalized, now) {
+		history.UpdatedAt = now
+	}
+	sortHistory(&history)
+	return history
+}
+
+func HistoryContentEqual(a, b History) bool {
+	if a.Version == 0 {
+		a.Version = historyVersion
+	}
+	if b.Version == 0 {
+		b.Version = historyVersion
+	}
+	sortHistory(&a)
+	sortHistory(&b)
+	if a.Version != b.Version || len(a.Days) != len(b.Days) || len(a.Events) != len(b.Events) {
+		return false
+	}
+	for i := range a.Days {
+		if !historyDayEqual(a.Days[i], b.Days[i]) {
+			return false
+		}
+	}
+	for i := range a.Events {
+		if a.Events[i] != b.Events[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func MergeHistories(local, remote History) History {
+	if local.Version == 0 {
+		local.Version = historyVersion
+	}
+	if remote.Version == 0 {
+		remote.Version = historyVersion
+	}
+	merged := History{
+		Version: max(local.Version, remote.Version),
+	}
+
+	dayMap := map[string]HistoryDay{}
+	for _, day := range append(local.Days, remote.Days...) {
+		existing, ok := dayMap[day.Date]
+		if !ok || day.UpdatedAt > existing.UpdatedAt || (day.UpdatedAt == existing.UpdatedAt && len(day.Tasks) >= len(existing.Tasks)) {
+			copyDay := HistoryDay{
+				Date:      day.Date,
+				UpdatedAt: day.UpdatedAt,
+				Tasks:     append([]TaskSnapshot(nil), day.Tasks...),
+			}
+			dayMap[day.Date] = copyDay
+		}
+	}
+	for _, day := range dayMap {
+		merged.Days = append(merged.Days, day)
+	}
+
+	eventMap := map[string]HistoryEvent{}
+	for _, event := range append(local.Events, remote.Events...) {
+		key := strings.Join([]string{
+			strconv.FormatInt(event.Timestamp, 10),
+			event.Date,
+			event.Type,
+			strconv.Itoa(event.TaskID),
+			event.Title,
+			event.FromStatus,
+			event.ToStatus,
+			strconv.Itoa(event.Duration),
+			event.Deadline,
+		}, "|")
+		if _, ok := eventMap[key]; !ok {
+			eventMap[key] = event
+		}
+	}
+	for _, event := range eventMap {
+		merged.Events = append(merged.Events, event)
+	}
+
+	if local.UpdatedAt > merged.UpdatedAt {
+		merged.UpdatedAt = local.UpdatedAt
+	}
+	if remote.UpdatedAt > merged.UpdatedAt {
+		merged.UpdatedAt = remote.UpdatedAt
+	}
+	sortHistory(&merged)
+	return merged
+}
+
 func EnsureHistorySnapshot(dataPath string, data Data) error {
 	history, err := LoadHistory(dataPath)
 	if err != nil {
@@ -172,14 +271,14 @@ func BuildStats(dataPath string, current Data, from, to string) (StatsSummary, e
 		return StatsSummary{}, err
 	}
 
-	now := time.Now().UnixMilli()
-	if upsertHistoryDay(&history, NormalizeData(current), now) {
-		if err := SaveHistory(dataPath, history); err != nil {
+	withSnapshot := HistoryWithCurrentSnapshot(history, current, time.Now().UnixMilli())
+	if !HistoryContentEqual(withSnapshot, history) {
+		if err := SaveHistory(dataPath, withSnapshot); err != nil {
 			return StatsSummary{}, err
 		}
 	}
 
-	return AggregateStats(history, from, to), nil
+	return AggregateStats(withSnapshot, from, to), nil
 }
 
 func AggregateStats(history History, from, to string) StatsSummary {
