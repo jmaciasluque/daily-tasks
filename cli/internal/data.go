@@ -13,12 +13,13 @@ import (
 
 // Task represents a single task item
 type Task struct {
-	ID       int    `json:"id"`
-	Title    string `json:"title"`
-	Duration int    `json:"duration"`
-	Status   string `json:"status"` // "todo", "done", or "skipped"
-	Order    int    `json:"order"`
-	Deadline string `json:"deadline,omitempty"` // HH:MM format, optional daily reminder time
+	ID         int    `json:"id"`
+	Title      string `json:"title"`
+	Duration   int    `json:"duration"`
+	Status     string `json:"status"` // "todo", "done", or "skipped"
+	Order      int    `json:"order"`
+	Deadline   string `json:"deadline,omitempty"`   // HH:MM format, optional daily reminder time
+	Visibility []int  `json:"visibility,omitempty"` // days of the week (0=Sun..6=Sat); nil/empty = every day
 }
 
 // Data represents the complete task data structure
@@ -129,7 +130,13 @@ func AssignMissingOrders(data *Data) {
 func CloneData(d Data) Data {
 	out := d
 	out.Tasks = make([]Task, len(d.Tasks))
-	copy(out.Tasks, d.Tasks)
+	for i, t := range d.Tasks {
+		out.Tasks[i] = t
+		if len(t.Visibility) > 0 {
+			out.Tasks[i].Visibility = make([]int, len(t.Visibility))
+			copy(out.Tasks[i].Visibility, t.Visibility)
+		}
+	}
 	return out
 }
 
@@ -279,6 +286,46 @@ func formatDuration(d time.Duration) string {
 		return strconv.Itoa(h) + "h"
 	}
 	return strconv.Itoa(h) + "h " + strconv.Itoa(m) + "m"
+}
+
+// IsVisibleOn returns true if the task should appear on the given weekday.
+// An empty or nil Visibility slice means the task is visible every day.
+func (t *Task) IsVisibleOn(weekday time.Weekday) bool {
+	if len(t.Visibility) == 0 {
+		return true
+	}
+	day := int(weekday)
+	for _, v := range t.Visibility {
+		if v == day {
+			return true
+		}
+	}
+	return false
+}
+
+// IsVisibleToday returns true if the task should appear today.
+func (t *Task) IsVisibleToday() bool {
+	return t.IsVisibleOn(time.Now().Weekday())
+}
+
+// VisibleTasksOn returns only tasks visible on the given weekday.
+func VisibleTasksOn(tasks []Task, weekday time.Weekday) []Task {
+	var result []Task
+	for _, t := range tasks {
+		if t.IsVisibleOn(weekday) {
+			result = append(result, t)
+		}
+	}
+	return result
+}
+
+// WeekdayFromDate parses a YYYY-MM-DD date and returns its weekday.
+func WeekdayFromDate(date string) (time.Weekday, error) {
+	t, err := time.Parse("2006-01-02", date)
+	if err != nil {
+		return 0, err
+	}
+	return t.Weekday(), nil
 }
 
 // ClampIndex clamps an index to valid range

@@ -4,6 +4,7 @@ import {
   normalizeData,
   assignMissingOrders,
   orderedTasks,
+  isVisibleToday,
   resetIfNeeded,
   nextOrder,
   cloneData,
@@ -370,6 +371,94 @@ describe('nextOrder', () => {
     };
 
     expect(nextOrder(data, 'skipped')).toBe(1);
+  });
+});
+
+describe('isVisibleToday', () => {
+  const today = new Date().getDay();
+
+  it('returns true when visibility is undefined', () => {
+    expect(isVisibleToday({ id: 1, title: 'A', duration: 5, status: 'todo', order: 1 })).toBe(true);
+  });
+
+  it('returns true when visibility is empty', () => {
+    expect(isVisibleToday({ id: 1, title: 'A', duration: 5, status: 'todo', order: 1, visibility: [] })).toBe(true);
+  });
+
+  it('returns true when today is included', () => {
+    expect(isVisibleToday({ id: 1, title: 'A', duration: 5, status: 'todo', order: 1, visibility: [today] })).toBe(true);
+  });
+
+  it('returns false when today is not included', () => {
+    const otherDay = (today + 1) % 7;
+    expect(isVisibleToday({ id: 1, title: 'A', duration: 5, status: 'todo', order: 1, visibility: [otherDay] })).toBe(false);
+  });
+});
+
+describe('orderedTasks visibility filtering', () => {
+  const today = new Date().getDay();
+  const otherDay = (today + 1) % 7;
+
+  it('excludes tasks not visible today', () => {
+    const data: Data = {
+      last_reset: todayString(),
+      next_id: 3,
+      tasks: [
+        { id: 1, title: 'Visible', duration: 5, status: 'todo', order: 1 },
+        { id: 2, title: 'Hidden', duration: 5, status: 'todo', order: 2, visibility: [otherDay] },
+      ],
+      theme_index: 0,
+    };
+    const todos = orderedTasks(data, 'todo');
+    expect(todos.length).toBe(1);
+    expect(todos[0].id).toBe(1);
+  });
+
+  it('includes tasks with visibility matching today', () => {
+    const data: Data = {
+      last_reset: todayString(),
+      next_id: 2,
+      tasks: [
+        { id: 1, title: 'Today task', duration: 5, status: 'todo', order: 1, visibility: [today] },
+      ],
+      theme_index: 0,
+    };
+    const todos = orderedTasks(data, 'todo');
+    expect(todos.length).toBe(1);
+  });
+});
+
+describe('resetIfNeeded preserves visibility', () => {
+  it('keeps visibility field after reset', () => {
+    const data: Data = {
+      last_reset: '2020-01-01',
+      next_id: 2,
+      tasks: [{ id: 1, title: 'MWF', duration: 30, status: 'done', order: 1, visibility: [1, 3, 5] }],
+      theme_index: 0,
+    };
+
+    const result = resetIfNeeded(data);
+    expect(result.tasks[0].visibility).toEqual([1, 3, 5]);
+    expect(result.tasks[0].status).toBe('todo');
+  });
+
+  it('resets ALL tasks including those not visible today', () => {
+    const otherDay = (new Date().getDay() + 1) % 7;
+    const data: Data = {
+      last_reset: '2020-01-01',
+      next_id: 3,
+      tasks: [
+        { id: 1, title: 'Visible', duration: 5, status: 'done', order: 1 },
+        { id: 2, title: 'Hidden today', duration: 5, status: 'done', order: 2, visibility: [otherDay] },
+      ],
+      theme_index: 0,
+    };
+
+    const result = resetIfNeeded(data);
+    expect(result.tasks).toHaveLength(2);
+    result.tasks.forEach(task => {
+      expect(task.status).toBe('todo');
+    });
   });
 });
 

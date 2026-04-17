@@ -66,7 +66,25 @@ export function assignMissingOrders(data: Data): void {
   });
 }
 
+export function isVisibleToday(task: Task): boolean {
+  if (!task.visibility || task.visibility.length === 0) return true;
+  return task.visibility.includes(new Date().getDay());
+}
+
 export function orderedTasks(data: Data, status: TaskStatus): Task[] {
+  return data.tasks
+    .filter((task) => task.status === status && isVisibleToday(task))
+    .sort((a, b) => {
+      if (status === 'todo') {
+        if (a.deadline && b.deadline) return a.deadline.localeCompare(b.deadline);
+        if (a.deadline) return -1;
+        if (b.deadline) return 1;
+      }
+      return a.order === b.order ? a.id - b.id : a.order - b.order;
+    });
+}
+
+function allOrderedTasks(data: Data, status: TaskStatus): Task[] {
   return data.tasks
     .filter((task) => task.status === status)
     .sort((a, b) => {
@@ -86,9 +104,9 @@ export function resetIfNeeded(data: Data): Data {
   }
   // Reset todo, done, and skipped — all go back to todo
   const merged = [
-    ...orderedTasks(data, 'todo'),
-    ...orderedTasks(data, 'done'),
-    ...orderedTasks(data, 'skipped'),
+    ...allOrderedTasks(data, 'todo'),
+    ...allOrderedTasks(data, 'done'),
+    ...allOrderedTasks(data, 'skipped'),
   ];
   merged.forEach((task, idx) => {
     task.status = 'todo';

@@ -93,6 +93,24 @@ type pushResultMsg struct {
 // colStatus maps TUI column index to task status
 var colStatus = [3]string{"todo", "done", "skipped"}
 
+var dayAbbrev = [7]string{"sun", "mon", "tue", "wed", "thu", "fri", "sat"}
+
+// formatVisibility converts a visibility slice to a human-readable string.
+func formatVisibility(days []int) string {
+	if len(days) == 0 {
+		return ""
+	}
+	names := make([]string, len(days))
+	for i, d := range days {
+		if d >= 0 && d <= 6 {
+			names[i] = dayAbbrev[d]
+		} else {
+			names[i] = strconv.Itoa(d)
+		}
+	}
+	return strings.Join(names, ",")
+}
+
 type model struct {
 	data          internal.Data
 	dataPath      string
@@ -101,9 +119,10 @@ type model struct {
 	width         int
 	height        int
 	mode          mode
-	titleInput    textinput.Model
-	durInput      textinput.Model
-	deadlineInput textinput.Model
+	titleInput      textinput.Model
+	durInput        textinput.Model
+	deadlineInput   textinput.Model
+	visibilityInput textinput.Model
 	editID        int
 	errMsg        string
 	statusMsg     string
@@ -175,17 +194,22 @@ func newModel(data internal.Data, path string) model {
 	deadline.Placeholder = "Deadline HH:MM (optional)"
 	deadline.CharLimit = 5
 
+	visibility := textinput.New()
+	visibility.Placeholder = "Days: mon,wed,fri (empty=every day)"
+	visibility.CharLimit = 50
+
 	m := model{
-		data:          data,
-		dataPath:      path,
-		lists:         [3]list.Model{todoList, doneList, skippedList},
-		focused:       0,
-		mode:          modeNormal,
-		screen:        screenTasks,
-		statsPeriod:   1,
-		titleInput:    title,
-		durInput:      dur,
-		deadlineInput: deadline,
+		data:            data,
+		dataPath:        path,
+		lists:           [3]list.Model{todoList, doneList, skippedList},
+		focused:         0,
+		mode:            modeNormal,
+		screen:          screenTasks,
+		statsPeriod:     1,
+		titleInput:      title,
+		durInput:        dur,
+		deadlineInput:   deadline,
+		visibilityInput: visibility,
 		width:         80,
 		height:        24,
 	}
@@ -312,9 +336,11 @@ func (m model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.titleInput.SetValue("")
 		m.durInput.SetValue("")
 		m.deadlineInput.SetValue("")
+		m.visibilityInput.SetValue("")
 		m.titleInput.Focus()
 		m.durInput.Blur()
 		m.deadlineInput.Blur()
+		m.visibilityInput.Blur()
 		return m, nil
 	case "r":
 		if !m.reloadFromDisk("") {
@@ -359,9 +385,11 @@ func (m model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.titleInput.SetValue(t.Title)
 		m.durInput.SetValue(strconv.Itoa(t.Duration))
 		m.deadlineInput.SetValue(t.Deadline)
+		m.visibilityInput.SetValue(formatVisibility(t.Visibility))
 		m.titleInput.Focus()
 		m.durInput.Blur()
 		m.deadlineInput.Blur()
+		m.visibilityInput.Blur()
 		return m, nil
 	case "d":
 		if m.screen != screenTasks {
@@ -474,7 +502,7 @@ func (m model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) updateEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	inputs := []*textinput.Model{&m.titleInput, &m.durInput, &m.deadlineInput}
+	inputs := []*textinput.Model{&m.titleInput, &m.durInput, &m.deadlineInput, &m.visibilityInput}
 
 	switch msg.String() {
 	case "esc":
@@ -510,6 +538,11 @@ func (m model) updateEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.deadlineInput.Focus()
 			return m, nil
 		}
+		if m.deadlineInput.Focused() {
+			m.deadlineInput.Blur()
+			m.visibilityInput.Focus()
+			return m, nil
+		}
 
 		title := strings.TrimSpace(m.titleInput.Value())
 		dur, err := internal.ParseDuration(m.durInput.Value())
@@ -526,16 +559,22 @@ func (m model) updateEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.errMsg = err.Error()
 			return m, nil
 		}
+		visibilityVal, err := parseVisibility(m.visibilityInput.Value())
+		if err != nil {
+			m.errMsg = err.Error()
+			return m, nil
+		}
 		m.pushHistory()
 		before := internal.CloneData(m.data)
 		if m.mode == modeAdd {
 			m.data.Tasks = append(m.data.Tasks, internal.Task{
-				ID:       m.data.NextID,
-				Title:    title,
-				Duration: dur,
-				Status:   "todo",
-				Order:    internal.NextOrder(&m.data, "todo"),
-				Deadline: deadlineVal,
+				ID:         m.data.NextID,
+				Title:      title,
+				Duration:   dur,
+				Status:     "todo",
+				Order:      internal.NextOrder(&m.data, "todo"),
+				Deadline:   deadlineVal,
+				Visibility: visibilityVal,
 			})
 			m.data.NextID++
 		} else {
@@ -544,6 +583,7 @@ func (m model) updateEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				t.Title = title
 				t.Duration = dur
 				t.Deadline = deadlineVal
+				t.Visibility = visibilityVal
 			}
 		}
 		m.mode = modeNormal
@@ -559,8 +599,10 @@ func (m model) updateEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.titleInput, cmd = m.titleInput.Update(msg)
 	} else if m.durInput.Focused() {
 		m.durInput, cmd = m.durInput.Update(msg)
-	} else {
+	} else if m.deadlineInput.Focused() {
 		m.deadlineInput, cmd = m.deadlineInput.Update(msg)
+	} else {
+		m.visibilityInput, cmd = m.visibilityInput.Update(msg)
 	}
 	return m, cmd
 }
@@ -767,6 +809,9 @@ func (m model) editView(title string) string {
 		"Deadline (HH:MM, optional):",
 		m.deadlineInput.View(),
 		"",
+		"Visibility (days, e.g. mon,wed,fri — empty=every day):",
+		m.visibilityInput.View(),
+		"",
 		"enter:next  tab:switch  esc:cancel",
 	}
 	if m.errMsg != "" {
@@ -796,9 +841,13 @@ func (m *model) resizeLists() {
 }
 
 func (m *model) syncLists() {
+	today := time.Now().Weekday()
 	var todoItems, doneItems, skippedItems []list.Item
 	prevGroup := ""
 	for _, t := range internal.OrderedTasks(&m.data, "todo") {
+		if !t.IsVisibleOn(today) {
+			continue
+		}
 		if t.Deadline != "" {
 			group := "AM"
 			if !internal.IsAM(t.Deadline) {
@@ -812,9 +861,15 @@ func (m *model) syncLists() {
 		todoItems = append(todoItems, taskItem{id: t.ID, title: t.Title, duration: t.Duration, deadline: t.Deadline})
 	}
 	for _, t := range internal.OrderedTasks(&m.data, "done") {
+		if !t.IsVisibleOn(today) {
+			continue
+		}
 		doneItems = append(doneItems, taskItem{id: t.ID, title: t.Title, duration: t.Duration, deadline: t.Deadline})
 	}
 	for _, t := range internal.OrderedTasks(&m.data, "skipped") {
+		if !t.IsVisibleOn(today) {
+			continue
+		}
 		skippedItems = append(skippedItems, taskItem{id: t.ID, title: t.Title, duration: t.Duration, deadline: t.Deadline})
 	}
 	m.lists[0].SetItems(todoItems)

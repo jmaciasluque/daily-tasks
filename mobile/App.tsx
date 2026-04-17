@@ -38,6 +38,10 @@ function formatDateInput(date: Date): string {
 
 function rangeForPeriod(period: StatsPeriod): { from: string; to: string } {
   const end = new Date();
+  if (period === 'today') {
+    const today = formatDateInput(end);
+    return { from: today, to: today };
+  }
   const days = period === '7d' ? 7 : period === '90d' ? 90 : period === '365d' ? 365 : 30;
   const start = new Date(end);
   start.setDate(end.getDate() - (days - 1));
@@ -72,7 +76,7 @@ export default function App() {
 
   const [screen, setScreen] = useState<Screen>('tasks');
   const [activeStatus, setActiveStatus] = useState<TaskStatus>('todo');
-  const [statsPeriod, setStatsPeriod] = useState<StatsPeriod>('30d');
+  const [statsPeriod, setStatsPeriod] = useState<StatsPeriod>('today');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
@@ -226,11 +230,11 @@ export default function App() {
     setIsEditorOpen(true);
   };
 
-  const handleSaveTask = (title: string, duration: number, deadline?: string) => {
+  const handleSaveTask = (title: string, duration: number, deadline?: string, visibility?: number[]) => {
     if (editingTask) {
-      editTask(editingTask.id, title, duration, deadline);
+      editTask(editingTask.id, title, duration, deadline, visibility);
     } else {
-      addTask(title, duration, deadline);
+      addTask(title, duration, deadline, visibility);
     }
     setIsEditorOpen(false);
   };
@@ -275,9 +279,9 @@ export default function App() {
     setIsSettingsOpen(true);
   };
 
-  const todoCount = data.tasks.filter(t => t.status === 'todo').length;
-  const doneCount = data.tasks.filter(t => t.status === 'done').length;
-  const skippedCount = data.tasks.filter(t => t.status === 'skipped').length;
+  const todoCount = orderedTasks(data, 'todo').length;
+  const doneCount = orderedTasks(data, 'done').length;
+  const skippedCount = orderedTasks(data, 'skipped').length;
 
   const renderSetupScreen = () => (
     <View style={styles.setupScreen}>

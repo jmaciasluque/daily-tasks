@@ -69,6 +69,16 @@
           "type": "string",
           "pattern": "^\\d{2}:\\d{2}$",
           "description": "Optional daily deadline time in HH:MM format. A notification is sent at this time each day when the task is still in 'todo' status."
+        },
+        "visibility": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 6
+          },
+          "uniqueItems": true,
+          "description": "Days of the week when this task is visible (0=Sunday, 1=Monday, ..., 6=Saturday). If omitted or empty, the task is visible every day."
         }
       }
     }

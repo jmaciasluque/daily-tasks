@@ -330,7 +330,7 @@ function upsertHistoryDay(history: History, data: Data, now: number): boolean {
   const day: HistoryDay = {
     date: data.last_reset,
     updated_at: now,
-    tasks: snapshotsForTasks(data.tasks),
+    tasks: snapshotsForVisibleTasks(data.tasks, data.last_reset),
   };
 
   const index = history.days.findIndex((entry) => entry.date === day.date);
@@ -361,6 +361,20 @@ function historyDayEqual(a: HistoryDay, b: HistoryDay): boolean {
       task.deadline === other.deadline
     );
   });
+}
+
+// Returns snapshots only for tasks visible on the given date (YYYY-MM-DD).
+// Falls back to all tasks if the date can't be parsed.
+function snapshotsForVisibleTasks(tasks: Task[], date: string): TaskSnapshot[] {
+  const parsed = new Date(`${date}T00:00:00`);
+  if (isNaN(parsed.getTime())) {
+    return snapshotsForTasks(tasks);
+  }
+  const weekday = parsed.getDay(); // 0=Sun … 6=Sat
+  const visible = tasks.filter(
+    (t) => !t.visibility || t.visibility.length === 0 || t.visibility.includes(weekday),
+  );
+  return snapshotsForTasks(visible);
 }
 
 function snapshotsForTasks(tasks: Task[]): TaskSnapshot[] {
