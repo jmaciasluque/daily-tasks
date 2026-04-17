@@ -1,0 +1,119 @@
+name: Mirror to Forgejo
+
+# Keeps code.juanmacias.me in sync with GitHub (source of truth).
+# Requires a GitHub secret: FORGEJO_TOKEN — a Forgejo personal access token
+# created at https://code.juanmacias.me/user/settings/applications
+
+on:
+  push:
+    branches: ['**']
+    tags: ['**']
+  delete: {}
+  issues:
+    types: [opened, edited, closed, reopened, labeled, unlabeled]
+
+env:
+  FORGEJO_BASE: https://code.juanmacias.me/api/v1
+  FORGEJO_REPO: jmacias/daily-tasks
+  GH_REPO: jmaciasluque/daily-tasks
+
+jobs:
+  # ── Code ──────────────────────────────────────────────────────────────────
+  mirror-code:
+    if: github.event_name == 'push' || github.event_name == 'delete'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Push all branches and tags (pruning deleted ones)
+        run: |
+          git remote add forgejo \
+            "https://jmacias:${{ secrets.FORGEJO_TOKEN }}@code.juanmacias.me/jmacias/daily-tasks.git"
+          git push forgejo --prune '+refs/heads/*:refs/heads/*'
+          git push forgejo --prune '+refs/tags/*:refs/tags/*'
+
+  # ── Issues ────────────────────────────────────────────────────────────────
+  mirror-issue:
+    if: github.event_name == 'issues'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Write issue payload to file
+        env:
+          ISSUE_JSON: ${{ toJSON(github.event.issue) }}
+        run: echo "$ISSUE_JSON" > /tmp/issue.json
+
+      - name: Sync issue to Forgejo
+        env:
+          FORGEJO_TOKEN: ${{ secrets.FORGEJO_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          GH_NUM=$(jq -r '.number'      /tmp/issue.json)
+          TITLE=$(jq -r  '.title'       /tmp/issue.json)
+          BODY=$(jq -r   '.body // ""'  /tmp/issue.json)
+          STATE=$(jq -r  '.state'       /tmp/issue.json)
+
+          AUTH="Authorization: token ${FORGEJO_TOKEN}"
+          CT="Content-Type: application/json"
+          # Each GitHub issue gets a label "gh-<N>" on Forgejo for tracking.
+          LABEL="gh-${GH_NUM}"
+
+          # 1. Ensure the tracking label exists on Forgejo (ignore 422 = already exists)
+          curl -sf -H "$AUTH" -H "$CT" \
+            -X POST "${FORGEJO_BASE}/repos/${FORGEJO_REPO}/labels" \
+            -d "{\"name\":\"${LABEL}\",\"color\":\"#6f42c1\"}" > /dev/null 2>&1 || true
+
+          # 2. Resolve the label's numeric ID (needed for issue creation)
+          LABEL_ID=""
+          page=1
+          while [ -z "$LABEL_ID" ]; do
+            batch=$(curl -sf -H "$AUTH" \
+              "${FORGEJO_BASE}/repos/${FORGEJO_REPO}/labels?limit=50&page=${page}")
+            LABEL_ID=$(echo "$batch" | jq -r ".[] | select(.name==\"${LABEL}\") | .id")
+            count=$(echo "$batch" | jq 'length')
+            [ "$count" -lt 50 ] && break
+            page=$((page + 1))
+          done
+
+          # 3. Find existing Forgejo issue carrying this tracking label
+          FJ_NUM=""
+          for issue_state in open closed; do
+            page=1
+            while [ -z "$FJ_NUM" ]; do
+              batch=$(curl -sf -H "$AUTH" \
+                "${FORGEJO_BASE}/repos/${FORGEJO_REPO}/issues?type=issues&state=${issue_state}&limit=50&page=${page}")
+              FJ_NUM=$(echo "$batch" | \
+                jq -r ".[] | select(any(.labels[]?; .name == \"${LABEL}\")) | .number" | head -1)
+              count=$(echo "$batch" | jq 'length')
+              [ "$count" -lt 50 ] && break
+              page=$((page + 1))
+            done
+            [ -n "$FJ_NUM" ] && break
+          done
+
+          # 4. Build body — prepend a back-link to GitHub
+          FULL_BODY=$(printf '> Mirrored from [GitHub #%s](https://github.com/%s/issues/%s)\n\n%s' \
+            "$GH_NUM" "$GH_REPO" "$GH_NUM" "$BODY")
+
+          if [ -z "$FJ_NUM" ]; then
+            # ── Create ──
+            LABELS_ARG=$([ -n "$LABEL_ID" ] && echo "[${LABEL_ID}]" || echo "[]")
+            jq -n \
+              --arg  title  "$TITLE" \
+              --arg  body   "$FULL_BODY" \
+              --argjson labels "$LABELS_ARG" \
+              '{title: $title, body: $body, labels: $labels}' | \
+            curl -sf -H "$AUTH" -H "$CT" \
+              -X POST "${FORGEJO_BASE}/repos/${FORGEJO_REPO}/issues" -d @-
+          else
+            # ── Update (title, body, open/closed state) ──
+            jq -n \
+              --arg title "$TITLE" \
+              --arg body  "$FULL_BODY" \
+              --arg state "$STATE" \
+              '{title: $title, body: $body, state: $state}' | \
+            curl -sf -H "$AUTH" -H "$CT" \
+              -X PATCH "${FORGEJO_BASE}/repos/${FORGEJO_REPO}/issues/${FJ_NUM}" -d @-
+          fi
