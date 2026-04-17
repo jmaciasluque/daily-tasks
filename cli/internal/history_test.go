@@ -1,6 +1,9 @@
 package internal
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestHistoryPath(t *testing.T) {
 	if got := HistoryPath("/tmp/tasks.json"); got != "/tmp/tasks.history.json" {
@@ -123,4 +126,119 @@ func TestAggregateStats(t *testing.T) {
 	if stats.Tasks[0].Title != "Workout" || stats.Tasks[0].DoneDays != 2 {
 		t.Fatalf("expected workout to be top completed task, got %+v", stats.Tasks[0])
 	}
+}
+
+func TestSnapshotFiltersInvisibleTasks(t *testing.T) {
+	// 2026-04-07 is a Tuesday (weekday 2)
+	tasks := []Task{
+		{ID: 1, Title: "Daily", Duration: 10, Status: "done"},
+		{ID: 2, Title: "MWF only", Duration: 20, Status: "todo", Visibility: []int{1, 3, 5}},
+		{ID: 3, Title: "Tue/Thu", Duration: 15, Status: "done", Visibility: []int{2, 4}},
+	}
+
+	snapshots := snapshotsForVisibleTasks(tasks, "2026-04-07")
+	if len(snapshots) != 2 {
+		t.Fatalf("expected 2 visible snapshots on Tuesday, got %d", len(snapshots))
+	}
+	// Should include task 1 (daily) and task 3 (Tue/Thu)
+	ids := map[int]bool{}
+	for _, s := range snapshots {
+		ids[s.ID] = true
+	}
+	if !ids[1] || !ids[3] {
+		t.Errorf("unexpected snapshot IDs: %v", snapshots)
+	}
+	if ids[2] {
+		t.Error("MWF task should not appear on Tuesday")
+	}
+}
+
+func TestSnapshotVisibilityPreservesField(t *testing.T) {
+	tasks := []Task{
+		{ID: 1, Title: "MWF", Duration: 10, Status: "todo", Visibility: []int{1, 3, 5}},
+	}
+	// Monday
+	snapshots := snapshotsForVisibleTasks(tasks, "2026-04-06")
+	if len(snapshots) != 1 {
+		t.Fatalf("expected 1 snapshot on Monday, got %d", len(snapshots))
+	}
+	if len(snapshots[0].Visibility) != 3 {
+		t.Errorf("expected visibility to be preserved in snapshot, got %v", snapshots[0].Visibility)
+	}
+}
+
+func TestStatsWithVisibility(t *testing.T) {
+	// Simulate: task 1 is daily, task 2 is MWF only
+	// Day 1: Tuesday 2026-04-07 — only task 1 visible
+	// Day 2: Wednesday 2026-04-08 — both tasks visible
+	path := t.TempDir() + "/tasks.json"
+
+	// Tuesday: both tasks exist but task 2 has MWF visibility
+	beforeTue := Data{
+		LastReset: "2026-04-07",
+		Tasks: []Task{
+			{ID: 1, Title: "Daily", Duration: 10, Status: "done"},
+			{ID: 2, Title: "MWF", Duration: 20, Status: "todo", Visibility: []int{1, 3, 5}},
+		},
+	}
+	afterTue := CloneData(beforeTue)
+	if err := SaveDataWithHistory(path, beforeTue, afterTue); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Wednesday: both visible, both done
+	beforeWed := Data{
+		LastReset: "2026-04-08",
+		Tasks: []Task{
+			{ID: 1, Title: "Daily", Duration: 10, Status: "done"},
+			{ID: 2, Title: "MWF", Duration: 20, Status: "done", Visibility: []int{1, 3, 5}},
+		},
+	}
+	afterWed := CloneData(beforeWed)
+	if err := SaveDataWithHistory(path, beforeWed, afterWed); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	history, err := LoadHistory(path)
+	if err != nil {
+		t.Fatalf("failed to load history: %v", err)
+	}
+
+	// Tuesday snapshot should only have task 1
+	var tueDaySnap *HistoryDay
+	var wedDaySnap *HistoryDay
+	for i := range history.Days {
+		switch history.Days[i].Date {
+		case "2026-04-07":
+			tueDaySnap = &history.Days[i]
+		case "2026-04-08":
+			wedDaySnap = &history.Days[i]
+		}
+	}
+
+	if tueDaySnap == nil || wedDaySnap == nil {
+		t.Fatalf("expected both days in history, got %+v", history.Days)
+	}
+	if len(tueDaySnap.Tasks) != 1 {
+		t.Errorf("Tuesday should have 1 visible task, got %d", len(tueDaySnap.Tasks))
+	}
+	if len(wedDaySnap.Tasks) != 2 {
+		t.Errorf("Wednesday should have 2 visible tasks, got %d", len(wedDaySnap.Tasks))
+	}
+
+	// Stats should reflect correct completion rates
+	stats := AggregateStats(history, "2026-04-07", "2026-04-08")
+
+	// Tuesday: 1 task, 1 done => 100%; Wednesday: 2 tasks, 2 done => 100%
+	if stats.Daily[0].TaskCount != 1 {
+		t.Errorf("Tuesday should count 1 task, got %d", stats.Daily[0].TaskCount)
+	}
+	if stats.Daily[1].TaskCount != 2 {
+		t.Errorf("Wednesday should count 2 tasks, got %d", stats.Daily[1].TaskCount)
+	}
+	if stats.CompletionRate != 1.0 {
+		t.Errorf("expected 100%% completion rate, got %.2f", stats.CompletionRate)
+	}
+
+	_ = time.Wednesday // ensure time import is used
 }

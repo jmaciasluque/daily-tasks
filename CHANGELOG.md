@@ -10,6 +10,25 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 
 ---
 
+## [0.7.0] - 2026-04-16
+
+### All platforms
+
+#### Added
+- Tasks can now have a `visibility` field — an array of weekday numbers
+  (0=Sun … 6=Sat) that controls which days the task appears. Omitting the
+  field (or leaving it empty) means the task is visible every day.
+- Visibility is editable everywhere: `--visibility` flag on `daily-tasks add`,
+  a text input in the CLI TUI edit/add modal, and a day-toggle button row in
+  the web and mobile task editors.
+- Daily history snapshots now only include tasks visible on that day, so
+  completion-rate stats accurately reflect the tasks that were actually
+  relevant — a Monday-only task no longer dilutes Tuesday's percentage.
+- New Go helpers: `IsVisibleOn`, `IsVisibleToday`, `VisibleTasksOn`,
+  `WeekdayFromDate`.
+
+---
+
 ## [0.6.0] - 2026-04-15
 
 ### Mobile

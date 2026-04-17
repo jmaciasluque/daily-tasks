@@ -7,6 +7,7 @@ export type Task = {
   status: TaskStatus;
   order: number;
   deadline?: string; // HH:MM format, optional
+  visibility?: number[]; // days of week (0=Sun..6=Sat); omitted = every day
 };
 
 export type TaskSnapshot = {

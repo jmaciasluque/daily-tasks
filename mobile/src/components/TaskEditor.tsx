@@ -3,11 +3,13 @@ import { Alert, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'reac
 import type { Task } from '../types';
 import type { Theme } from '../theme/themes';
 
+const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
+
 type Props = {
   visible: boolean;
   task: Task | null;
   theme: Theme;
-  onSave: (title: string, duration: number, deadline?: string) => void;
+  onSave: (title: string, duration: number, deadline?: string, visibility?: number[]) => void;
   onClose: () => void;
 };
 
@@ -15,16 +17,19 @@ export function TaskEditor({ visible, task, theme, onSave, onClose }: Props) {
   const [title, setTitle] = useState('');
   const [duration, setDuration] = useState('5');
   const [deadline, setDeadline] = useState('');
+  const [visibility, setVisibility] = useState<number[]>([]);
 
   useEffect(() => {
     if (task) {
       setTitle(task.title);
       setDuration(String(task.duration));
       setDeadline(task.deadline ?? '');
+      setVisibility(task.visibility ?? []);
     } else {
       setTitle('');
       setDuration('5');
       setDeadline('');
+      setVisibility([]);
     }
   }, [task, visible]);
 
@@ -54,7 +59,13 @@ export function TaskEditor({ visible, task, theme, onSave, onClose }: Props) {
       }
     }
 
-    onSave(trimmedTitle, parsedDuration, trimmedDeadline || undefined);
+    onSave(trimmedTitle, parsedDuration, trimmedDeadline || undefined, visibility.length > 0 ? visibility : undefined);
+  };
+
+  const toggleDay = (day: number) => {
+    setVisibility((prev) =>
+      prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day].sort()
+    );
   };
 
   return (
@@ -90,6 +101,35 @@ export function TaskEditor({ visible, task, theme, onSave, onClose }: Props) {
           <Text style={[styles.hint, { color: theme.muted }]}>
             Set a deadline to receive a daily notification reminder.
           </Text>
+          <View>
+            <Text style={[styles.hint, { color: theme.muted, marginBottom: 6 }]}>
+              Visible on (empty = every day):
+            </Text>
+            <View style={styles.dayRow}>
+              {DAY_LABELS.map((label, i) => (
+                <Pressable
+                  key={i}
+                  onPress={() => toggleDay(i)}
+                  style={[
+                    styles.dayButton,
+                    {
+                      borderColor: theme.border,
+                      backgroundColor: visibility.includes(i) ? theme.accent : 'transparent',
+                    },
+                  ]}
+                >
+                  <Text style={{
+                    fontSize: 12,
+                    fontWeight: visibility.includes(i) ? '700' : '400',
+                    color: visibility.includes(i) ? '#111111' : theme.text,
+                    textAlign: 'center',
+                  }}>
+                    {label}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
           <View style={styles.actions}>
             <Pressable onPress={onClose} style={[styles.secondaryButton, { borderColor: theme.border }]}>
               <Text style={{ color: theme.text }}>Cancel</Text>
@@ -151,5 +191,16 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 12,
+  },
+  dayRow: {
+    flexDirection: 'row',
+    gap: 4,
+  },
+  dayButton: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingVertical: 6,
+    alignItems: 'center',
   },
 });

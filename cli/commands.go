@@ -6,12 +6,59 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"daily-tasks/internal"
 )
+
+// parseVisibility parses a comma-separated list of day names or numbers into
+// weekday integers (0=Sun..6=Sat). Returns nil for empty input (= every day).
+func parseVisibility(s string) ([]int, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil, nil
+	}
+	dayNames := map[string]int{
+		"sun": 0, "sunday": 0,
+		"mon": 1, "monday": 1,
+		"tue": 2, "tuesday": 2,
+		"wed": 3, "wednesday": 3,
+		"thu": 4, "thursday": 4,
+		"fri": 5, "friday": 5,
+		"sat": 6, "saturday": 6,
+	}
+	seen := map[int]bool{}
+	var days []int
+	for _, part := range strings.Split(s, ",") {
+		part = strings.TrimSpace(strings.ToLower(part))
+		if part == "" {
+			continue
+		}
+		if d, ok := dayNames[part]; ok {
+			if !seen[d] {
+				seen[d] = true
+				days = append(days, d)
+			}
+			continue
+		}
+		n, err := strconv.Atoi(part)
+		if err != nil || n < 0 || n > 6 {
+			return nil, fmt.Errorf("invalid day %q: use 0-6 or day names (mon,tue,...)", part)
+		}
+		if !seen[n] {
+			seen[n] = true
+			days = append(days, n)
+		}
+	}
+	if len(days) == 0 {
+		return nil, nil
+	}
+	sort.Ints(days)
+	return days, nil
+}
 
 func parseDeadline(s string) (string, error) {
 	s = strings.TrimSpace(s)
@@ -128,7 +175,7 @@ func printListUsage(w io.Writer) {
 }
 
 func printAddUsage(w io.Writer) {
-	fmt.Fprintln(w, "Usage: daily-tasks add --title \"Task title\" --duration 15 [--deadline HH:MM] [--status todo|done]")
+	fmt.Fprintln(w, "Usage: daily-tasks add --title \"Task title\" --duration 15 [--deadline HH:MM] [--visibility mon,wed,fri] [--status todo|done]")
 }
 
 func printMoveUsage(w io.Writer, status string) {
@@ -184,19 +231,30 @@ func runList(args []string) error {
 		return errors.New("status must be one of todo, done, all")
 	}
 
+	today := time.Now().Weekday()
+	visibleOrdered := func(status string) []*internal.Task {
+		var result []*internal.Task
+		for _, t := range internal.OrderedTasks(&data, status) {
+			if t.IsVisibleOn(today) {
+				result = append(result, t)
+			}
+		}
+		return result
+	}
+
 	switch statusValue {
 	case "todo":
-		printTaskGroup("TODO", internal.OrderedTasks(&data, "todo"))
+		printTaskGroup("TODO", visibleOrdered("todo"))
 	case "done":
-		printTaskGroup("DONE", internal.OrderedTasks(&data, "done"))
+		printTaskGroup("DONE", visibleOrdered("done"))
 	case "skipped":
-		printTaskGroup("SKIPPED", internal.OrderedTasks(&data, "skipped"))
+		printTaskGroup("SKIPPED", visibleOrdered("skipped"))
 	case "all":
-		printTaskGroup("TODO", internal.OrderedTasks(&data, "todo"))
+		printTaskGroup("TODO", visibleOrdered("todo"))
 		fmt.Println("")
-		printTaskGroup("DONE", internal.OrderedTasks(&data, "done"))
+		printTaskGroup("DONE", visibleOrdered("done"))
 		fmt.Println("")
-		printTaskGroup("SKIPPED", internal.OrderedTasks(&data, "skipped"))
+		printTaskGroup("SKIPPED", visibleOrdered("skipped"))
 	default:
 		return errors.New("status must be one of todo, done, skipped, all")
 	}
@@ -215,6 +273,7 @@ func runAdd(args []string) error {
 	title := fs.String("title", "", "task title")
 	duration := fs.Int("duration", 0, "duration in minutes")
 	deadline := fs.String("deadline", "", "daily reminder time in HH:MM format")
+	visibility := fs.String("visibility", "", "visible days: mon,tue,wed or 0-6 (empty=every day)")
 	status := fs.String("status", "todo", "todo|done")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -234,6 +293,10 @@ func runAdd(args []string) error {
 	if err != nil {
 		return err
 	}
+	visibilityValue, err := parseVisibility(*visibility)
+	if err != nil {
+		return err
+	}
 
 	data, path, _, err := loadDataAndReset()
 	if err != nil {
@@ -241,12 +304,13 @@ func runAdd(args []string) error {
 	}
 
 	newTask := internal.Task{
-		ID:       data.NextID,
-		Title:    strings.TrimSpace(*title),
-		Duration: *duration,
-		Status:   statusValue,
-		Order:    internal.NextOrder(&data, statusValue),
-		Deadline: deadlineValue,
+		ID:         data.NextID,
+		Title:      strings.TrimSpace(*title),
+		Duration:   *duration,
+		Status:     statusValue,
+		Order:      internal.NextOrder(&data, statusValue),
+		Deadline:   deadlineValue,
+		Visibility: visibilityValue,
 	}
 	before := internal.CloneData(data)
 	data.Tasks = append(data.Tasks, newTask)

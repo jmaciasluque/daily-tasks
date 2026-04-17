@@ -435,6 +435,97 @@ func TestDeadlineIndicator(t *testing.T) {
 	}
 }
 
+func TestIsVisibleOn(t *testing.T) {
+	t.Run("nil visibility means every day", func(t *testing.T) {
+		task := Task{ID: 1, Title: "Daily"}
+		for d := time.Sunday; d <= time.Saturday; d++ {
+			if !task.IsVisibleOn(d) {
+				t.Errorf("expected visible on %s", d)
+			}
+		}
+	})
+
+	t.Run("empty visibility means every day", func(t *testing.T) {
+		task := Task{ID: 1, Title: "Daily", Visibility: []int{}}
+		if !task.IsVisibleOn(time.Monday) {
+			t.Error("expected visible on Monday")
+		}
+	})
+
+	t.Run("specific days", func(t *testing.T) {
+		task := Task{ID: 1, Title: "MWF", Visibility: []int{1, 3, 5}} // Mon, Wed, Fri
+		if !task.IsVisibleOn(time.Monday) {
+			t.Error("expected visible on Monday")
+		}
+		if !task.IsVisibleOn(time.Wednesday) {
+			t.Error("expected visible on Wednesday")
+		}
+		if task.IsVisibleOn(time.Tuesday) {
+			t.Error("expected NOT visible on Tuesday")
+		}
+		if task.IsVisibleOn(time.Sunday) {
+			t.Error("expected NOT visible on Sunday")
+		}
+	})
+}
+
+func TestVisibleTasksOn(t *testing.T) {
+	tasks := []Task{
+		{ID: 1, Title: "Daily", Visibility: nil},
+		{ID: 2, Title: "MWF", Visibility: []int{1, 3, 5}},
+		{ID: 3, Title: "Weekends", Visibility: []int{0, 6}},
+	}
+
+	mon := VisibleTasksOn(tasks, time.Monday)
+	if len(mon) != 2 {
+		t.Fatalf("expected 2 visible on Monday, got %d", len(mon))
+	}
+	if mon[0].ID != 1 || mon[1].ID != 2 {
+		t.Errorf("unexpected Monday tasks: %v", mon)
+	}
+
+	sun := VisibleTasksOn(tasks, time.Sunday)
+	if len(sun) != 2 {
+		t.Fatalf("expected 2 visible on Sunday, got %d", len(sun))
+	}
+	if sun[0].ID != 1 || sun[1].ID != 3 {
+		t.Errorf("unexpected Sunday tasks: %v", sun)
+	}
+}
+
+func TestWeekdayFromDate(t *testing.T) {
+	// 2026-04-15 is a Wednesday
+	wd, err := WeekdayFromDate("2026-04-15")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if wd != time.Wednesday {
+		t.Errorf("expected Wednesday, got %s", wd)
+	}
+
+	_, err = WeekdayFromDate("bad-date")
+	if err == nil {
+		t.Error("expected error for bad date")
+	}
+}
+
+func TestCloneDataPreservesVisibility(t *testing.T) {
+	original := Data{
+		LastReset: "2026-01-23",
+		NextID:    2,
+		Tasks: []Task{
+			{ID: 1, Title: "MWF", Duration: 5, Status: "todo", Order: 1, Visibility: []int{1, 3, 5}},
+		},
+	}
+
+	clone := CloneData(original)
+	clone.Tasks[0].Visibility[0] = 0
+
+	if original.Tasks[0].Visibility[0] != 1 {
+		t.Error("original visibility was modified through clone")
+	}
+}
+
 func TestClampIndex(t *testing.T) {
 	tests := []struct {
 		idx, length, want int

@@ -135,7 +135,7 @@ export function useTaskData() {
     setData(resetResult.data);
   }, []);
 
-  const addTask = useCallback((title: string, duration: number, deadline?: string) => {
+  const addTask = useCallback((title: string, duration: number, deadline?: string, visibility?: number[]) => {
     updateData((prev) => {
       const id = prev.next_id || 1;
       const order = nextOrder(prev, 'todo');
@@ -144,17 +144,17 @@ export function useTaskData() {
         next_id: id + 1,
         tasks: [
           ...prev.tasks,
-          { id, title, duration, status: 'todo' as const, order, deadline },
+          { id, title, duration, status: 'todo' as const, order, deadline, visibility },
         ],
       };
     });
   }, [updateData]);
 
-  const editTask = useCallback((id: number, title: string, duration: number, deadline?: string) => {
+  const editTask = useCallback((id: number, title: string, duration: number, deadline?: string, visibility?: number[]) => {
     updateData((prev) => ({
       ...prev,
       tasks: prev.tasks.map((task) =>
-        task.id === id ? { ...task, title, duration, deadline } : task
+        task.id === id ? { ...task, title, duration, deadline, visibility } : task
       ),
     }));
   }, [updateData]);

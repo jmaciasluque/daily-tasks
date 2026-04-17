@@ -2,11 +2,13 @@ import React, { useState, useEffect } from 'react';
 import type { Task } from '../types';
 import type { Theme } from '../theme/themes';
 
+const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
+
 type Props = {
   visible: boolean;
   task: Task | null;
   theme: Theme;
-  onSave: (title: string, duration: number, deadline?: string) => void;
+  onSave: (title: string, duration: number, deadline?: string, visibility?: number[]) => void;
   onClose: () => void;
 };
 
@@ -14,6 +16,7 @@ export function TaskEditor({ visible, task, theme, onSave, onClose }: Props) {
   const [title, setTitle] = useState('');
   const [duration, setDuration] = useState('5');
   const [deadline, setDeadline] = useState('');
+  const [visibility, setVisibility] = useState<number[]>([]);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -21,10 +24,12 @@ export function TaskEditor({ visible, task, theme, onSave, onClose }: Props) {
       setTitle(task.title);
       setDuration(String(task.duration));
       setDeadline(task.deadline ?? '');
+      setVisibility(task.visibility ?? []);
     } else {
       setTitle('');
       setDuration('5');
       setDeadline('');
+      setVisibility([]);
     }
     setError('');
   }, [task, visible]);
@@ -45,7 +50,13 @@ export function TaskEditor({ visible, task, theme, onSave, onClose }: Props) {
       if (h < 0 || h > 23 || m < 0 || m > 59) { setError('Deadline time is out of range.'); return; }
     }
 
-    onSave(trimmedTitle, parsedDuration, trimmedDeadline || undefined);
+    onSave(trimmedTitle, parsedDuration, trimmedDeadline || undefined, visibility.length > 0 ? visibility : undefined);
+  };
+
+  const toggleDay = (day: number) => {
+    setVisibility((prev) =>
+      prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day].sort()
+    );
   };
 
   const input: React.CSSProperties = {
@@ -79,6 +90,32 @@ export function TaskEditor({ visible, task, theme, onSave, onClose }: Props) {
         <input placeholder="Deadline (HH:MM, optional)" value={deadline} onChange={e => setDeadline(e.target.value)} style={input} />
         <div style={{ fontSize: 12, color: theme.muted, marginTop: -4 }}>
           Set a deadline to receive a daily notification reminder.
+        </div>
+        <div>
+          <div style={{ fontSize: 12, color: theme.muted, marginBottom: 6 }}>
+            Visible on (empty = every day):
+          </div>
+          <div style={{ display: 'flex', gap: 4 }}>
+            {DAY_LABELS.map((label, i) => (
+              <button
+                key={i}
+                onClick={() => toggleDay(i)}
+                style={{
+                  flex: 1,
+                  padding: '6px 0',
+                  borderRadius: 8,
+                  border: `1px solid ${theme.border}`,
+                  background: visibility.includes(i) ? theme.accent : 'transparent',
+                  color: visibility.includes(i) ? '#111111' : theme.text,
+                  fontWeight: visibility.includes(i) ? 700 : 400,
+                  fontSize: 12,
+                  cursor: 'pointer',
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
         {error && <div style={{ color: '#f87171', fontSize: 13 }}>{error}</div>}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 8 }}>

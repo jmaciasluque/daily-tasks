@@ -226,11 +226,11 @@ export default function App() {
     setIsEditorOpen(true);
   };
 
-  const handleSaveTask = (title: string, duration: number, deadline?: string) => {
+  const handleSaveTask = (title: string, duration: number, deadline?: string, visibility?: number[]) => {
     if (editingTask) {
-      editTask(editingTask.id, title, duration, deadline);
+      editTask(editingTask.id, title, duration, deadline, visibility);
     } else {
-      addTask(title, duration, deadline);
+      addTask(title, duration, deadline, visibility);
     }
     setIsEditorOpen(false);
   };

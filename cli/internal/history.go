@@ -13,11 +13,12 @@ import (
 const historyVersion = 1
 
 type TaskSnapshot struct {
-	ID       int    `json:"id"`
-	Title    string `json:"title"`
-	Duration int    `json:"duration"`
-	Status   string `json:"status"`
-	Deadline string `json:"deadline,omitempty"`
+	ID         int    `json:"id"`
+	Title      string `json:"title"`
+	Duration   int    `json:"duration"`
+	Status     string `json:"status"`
+	Deadline   string `json:"deadline,omitempty"`
+	Visibility []int  `json:"visibility,omitempty"`
 }
 
 type HistoryDay struct {
@@ -399,7 +400,7 @@ func upsertHistoryDay(history *History, data Data, now int64) bool {
 	day := HistoryDay{
 		Date:      data.LastReset,
 		UpdatedAt: now,
-		Tasks:     snapshotsForTasks(data.Tasks),
+		Tasks:     snapshotsForVisibleTasks(data.Tasks, data.LastReset),
 	}
 
 	for i := range history.Days {
@@ -421,8 +422,18 @@ func historyDayEqual(a, b HistoryDay) bool {
 		return false
 	}
 	for i := range a.Tasks {
-		if a.Tasks[i] != b.Tasks[i] {
+		ta, tb := a.Tasks[i], b.Tasks[i]
+		if ta.ID != tb.ID || ta.Title != tb.Title || ta.Duration != tb.Duration ||
+			ta.Status != tb.Status || ta.Deadline != tb.Deadline {
 			return false
+		}
+		if len(ta.Visibility) != len(tb.Visibility) {
+			return false
+		}
+		for j := range ta.Visibility {
+			if ta.Visibility[j] != tb.Visibility[j] {
+				return false
+			}
 		}
 	}
 	return true
@@ -432,17 +443,29 @@ func snapshotsForTasks(tasks []Task) []TaskSnapshot {
 	snapshots := make([]TaskSnapshot, 0, len(tasks))
 	for _, task := range tasks {
 		snapshots = append(snapshots, TaskSnapshot{
-			ID:       task.ID,
-			Title:    task.Title,
-			Duration: task.Duration,
-			Status:   task.Status,
-			Deadline: task.Deadline,
+			ID:         task.ID,
+			Title:      task.Title,
+			Duration:   task.Duration,
+			Status:     task.Status,
+			Deadline:   task.Deadline,
+			Visibility: task.Visibility,
 		})
 	}
 	sort.Slice(snapshots, func(i, j int) bool {
 		return snapshots[i].ID < snapshots[j].ID
 	})
 	return snapshots
+}
+
+// snapshotsForVisibleTasks returns snapshots only for tasks visible on the
+// given date string (YYYY-MM-DD). Falls back to all tasks on parse error.
+func snapshotsForVisibleTasks(tasks []Task, date string) []TaskSnapshot {
+	weekday, err := WeekdayFromDate(date)
+	if err != nil {
+		return snapshotsForTasks(tasks)
+	}
+	visible := VisibleTasksOn(tasks, weekday)
+	return snapshotsForTasks(visible)
 }
 
 func appendHistoryEvents(history *History, before, after Data, now int64) {
