@@ -3,7 +3,12 @@ import { Alert, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'reac
 import type { Task } from '../types';
 import type { Theme } from '../theme/themes';
 
-const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
+// Mon-first display; values are JS weekday numbers (0=Sun … 6=Sat)
+const DAY_ENTRIES = [
+  { label: 'Mon', value: 1 }, { label: 'Tue', value: 2 }, { label: 'Wed', value: 3 },
+  { label: 'Thu', value: 4 }, { label: 'Fri', value: 5 }, { label: 'Sat', value: 6 },
+  { label: 'Sun', value: 0 },
+] as const;
 
 type Props = {
   visible: boolean;
@@ -106,25 +111,25 @@ export function TaskEditor({ visible, task, theme, onSave, onClose }: Props) {
               Visible on (empty = every day):
             </Text>
             <View style={styles.dayRow}>
-              {DAY_LABELS.map((label, i) => (
+              {DAY_ENTRIES.map((entry) => (
                 <Pressable
-                  key={i}
-                  onPress={() => toggleDay(i)}
+                  key={entry.value}
+                  onPress={() => toggleDay(entry.value)}
                   style={[
                     styles.dayButton,
                     {
                       borderColor: theme.border,
-                      backgroundColor: visibility.includes(i) ? theme.accent : 'transparent',
+                      backgroundColor: visibility.includes(entry.value) ? theme.accent : 'transparent',
                     },
                   ]}
                 >
                   <Text style={{
                     fontSize: 12,
-                    fontWeight: visibility.includes(i) ? '700' : '400',
-                    color: visibility.includes(i) ? '#111111' : theme.text,
+                    fontWeight: visibility.includes(entry.value) ? '700' : '400',
+                    color: visibility.includes(entry.value) ? '#111111' : theme.text,
                     textAlign: 'center',
                   }}>
-                    {label}
+                    {entry.label}
                   </Text>
                 </Pressable>
               ))}

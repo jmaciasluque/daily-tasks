@@ -8,7 +8,7 @@ import type { StatsSummary, Task, TaskStatus } from './types';
 import { appVersion } from './config/env';
 
 type Screen = 'tasks' | 'stats';
-type StatsPeriod = '7d' | '30d' | '90d' | '365d' | 'custom';
+type StatsPeriod = 'today' | '7d' | '30d' | '90d' | '365d' | 'custom';
 
 function formatDateInput(date: Date): string {
   return date.toISOString().slice(0, 10);
@@ -16,6 +16,10 @@ function formatDateInput(date: Date): string {
 
 function rangeForPeriod(period: Exclude<StatsPeriod, 'custom'>): { from: string; to: string } {
   const end = new Date();
+  if (period === 'today') {
+    const today = formatDateInput(end);
+    return { from: today, to: today };
+  }
   const days = period === '7d' ? 7 : period === '90d' ? 90 : period === '365d' ? 365 : 30;
   const start = new Date(end);
   start.setDate(end.getDate() - (days - 1));
@@ -62,8 +66,8 @@ export default function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
-  const [statsPeriod, setStatsPeriod] = useState<StatsPeriod>('30d');
-  const [statsRange, setStatsRange] = useState(() => rangeForPeriod('30d'));
+  const [statsPeriod, setStatsPeriod] = useState<StatsPeriod>('today');
+  const [statsRange, setStatsRange] = useState(() => rangeForPeriod('today'));
   const [stats, setStats] = useState<StatsSummary | null>(null);
   const [statsLoading, setStatsLoading] = useState(false);
   const [statsError, setStatsError] = useState('');
@@ -72,9 +76,9 @@ export default function App() {
   const list = orderedTasks(data, activeStatus);
   const isLight = isLightColor(theme.bg);
 
-  const todoCount = data.tasks.filter((t) => t.status === 'todo').length;
-  const doneCount = data.tasks.filter((t) => t.status === 'done').length;
-  const skippedCount = data.tasks.filter((t) => t.status === 'skipped').length;
+  const todoCount = orderedTasks(data, 'todo').length;
+  const doneCount = orderedTasks(data, 'done').length;
+  const skippedCount = orderedTasks(data, 'skipped').length;
 
   useEffect(() => {
     if (screen !== 'stats') {
@@ -253,7 +257,7 @@ export default function App() {
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {(['7d', '30d', '90d', '365d'] as const).map((period) => (
+            {(['today', '7d', '30d', '90d', '365d'] as const).map((period) => (
               <button
                 key={period}
                 onClick={() => setPresetPeriod(period)}

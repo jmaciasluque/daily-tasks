@@ -2,7 +2,12 @@ import React, { useState, useEffect } from 'react';
 import type { Task } from '../types';
 import type { Theme } from '../theme/themes';
 
-const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
+// Mon-first display; values are JS weekday numbers (0=Sun … 6=Sat)
+const DAY_ENTRIES = [
+  { label: 'Mon', value: 1 }, { label: 'Tue', value: 2 }, { label: 'Wed', value: 3 },
+  { label: 'Thu', value: 4 }, { label: 'Fri', value: 5 }, { label: 'Sat', value: 6 },
+  { label: 'Sun', value: 0 },
+] as const;
 
 type Props = {
   visible: boolean;
@@ -96,23 +101,23 @@ export function TaskEditor({ visible, task, theme, onSave, onClose }: Props) {
             Visible on (empty = every day):
           </div>
           <div style={{ display: 'flex', gap: 4 }}>
-            {DAY_LABELS.map((label, i) => (
+            {DAY_ENTRIES.map((entry) => (
               <button
-                key={i}
-                onClick={() => toggleDay(i)}
+                key={entry.value}
+                onClick={() => toggleDay(entry.value)}
                 style={{
                   flex: 1,
                   padding: '6px 0',
                   borderRadius: 8,
                   border: `1px solid ${theme.border}`,
-                  background: visibility.includes(i) ? theme.accent : 'transparent',
-                  color: visibility.includes(i) ? '#111111' : theme.text,
-                  fontWeight: visibility.includes(i) ? 700 : 400,
+                  background: visibility.includes(entry.value) ? theme.accent : 'transparent',
+                  color: visibility.includes(entry.value) ? '#111111' : theme.text,
+                  fontWeight: visibility.includes(entry.value) ? 700 : 400,
                   fontSize: 12,
                   cursor: 'pointer',
                 }}
               >
-                {label}
+                {entry.label}
               </button>
             ))}
           </div>

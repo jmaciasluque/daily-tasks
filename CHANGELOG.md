@@ -10,6 +10,16 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 
 ---
 
+## [0.7.1] - 2026-04-17
+
+### Web & Mobile
+
+#### Added
+- Stats panel now includes a **Today** period button, showing completion rate and
+  status mix for the current day only.
+
+---
+
 ## [0.7.0] - 2026-04-16
 
 ### All platforms

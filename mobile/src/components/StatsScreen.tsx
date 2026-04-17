@@ -4,7 +4,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import type { Theme } from '../theme/themes';
 import type { StatsSummary } from '../types';
 
-export type StatsPeriod = '7d' | '30d' | '90d' | '365d';
+export type StatsPeriod = 'today' | '7d' | '30d' | '90d' | '365d';
 
 type StatsScreenProps = {
   period: StatsPeriod;
@@ -50,7 +50,7 @@ export function StatsScreen({ period, stats, theme, onSelectPeriod }: StatsScree
           {stats.from} to {stats.to}
         </Text>
         <View style={styles.periodRow}>
-          {(['7d', '30d', '90d', '365d'] as const).map((candidate) => (
+          {(['today', '7d', '30d', '90d', '365d'] as const).map((candidate) => (
             <Pressable
               key={candidate}
               onPress={() => onSelectPeriod(candidate)}
