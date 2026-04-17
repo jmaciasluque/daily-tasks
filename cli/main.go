@@ -432,6 +432,8 @@ func (m model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		before := internal.CloneData(m.data)
 		if t.Status == "todo" {
 			t.Status = "done"
+			doneCount, totalCount := m.todayCompletionProgress()
+			m.statusMsg = completionStatusMessage(doneCount, totalCount)
 		} else {
 			t.Status = "todo"
 		}
@@ -989,6 +991,37 @@ func (m model) renderStatsView() string {
 
 func renderMetric(label, value string) string {
 	return fmt.Sprintf("%s %s", label+":", value)
+}
+
+func (m *model) todayCompletionProgress() (doneCount int, totalCount int) {
+	today := time.Now().Weekday()
+	for _, task := range m.data.Tasks {
+		if !task.IsVisibleOn(today) {
+			continue
+		}
+		totalCount++
+		if task.Status == "done" {
+			doneCount++
+		}
+	}
+	return doneCount, totalCount
+}
+
+func completionStatusMessage(doneCount, totalCount int) string {
+	if totalCount <= 0 {
+		return "Task completed."
+	}
+	percent := doneCount * 100 / totalCount
+	switch {
+	case doneCount >= totalCount:
+		return fmt.Sprintf("🎉 All tasks done today: %d/%d (100%%). Amazing work!", doneCount, totalCount)
+	case percent >= 75:
+		return fmt.Sprintf("Great momentum: %d/%d done (%d%%).", doneCount, totalCount, percent)
+	case percent >= 50:
+		return fmt.Sprintf("Nice progress: %d/%d done (%d%%). Keep going!", doneCount, totalCount, percent)
+	default:
+		return fmt.Sprintf("Good start: %d/%d done (%d%%).", doneCount, totalCount, percent)
+	}
 }
 
 func (m *model) selectedTask() *internal.Task {

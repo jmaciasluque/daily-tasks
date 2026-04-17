@@ -3,9 +3,11 @@ package main
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"daily-tasks/internal"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -131,5 +133,49 @@ func TestCycleStatsPeriodWraps(t *testing.T) {
 	m.cycleStatsPeriod(1)
 	if m.statsPeriod != 0 {
 		t.Fatalf("expected wrap back to first period, got %d", m.statsPeriod)
+	}
+}
+
+func TestCompletionStatusMessageIncludesPercent(t *testing.T) {
+	got := completionStatusMessage(1, 4)
+	if !strings.Contains(got, "1/4") {
+		t.Fatalf("expected count in message, got %q", got)
+	}
+	if !strings.Contains(got, "25%") {
+		t.Fatalf("expected percent in message, got %q", got)
+	}
+}
+
+func TestCompletionStatusMessageAllDone(t *testing.T) {
+	got := completionStatusMessage(3, 3)
+	if !strings.Contains(got, "100%") {
+		t.Fatalf("expected 100 percent in message, got %q", got)
+	}
+	if !strings.Contains(got, "All tasks done today") {
+		t.Fatalf("expected all-done message, got %q", got)
+	}
+}
+
+func TestEnterOnTodoSetsMotivationalStatus(t *testing.T) {
+	today := time.Now().Format("2006-01-02")
+	data := internal.Data{
+		LastReset: today,
+		NextID:    3,
+		Tasks: []internal.Task{
+			{ID: 1, Title: "A", Duration: 10, Status: "todo", Order: 1},
+			{ID: 2, Title: "B", Duration: 20, Status: "todo", Order: 2},
+		},
+	}
+
+	m := newModel(data, t.TempDir()+"/tasks.json")
+	updatedModel, _ := m.updateNormal(tea.KeyMsg{Type: tea.KeyEnter})
+	updated := updatedModel.(model)
+
+	task := internal.FindTask(&updated.data, 1)
+	if task == nil || task.Status != "done" {
+		t.Fatalf("expected selected task to be marked done, got %#v", task)
+	}
+	if !strings.Contains(updated.statusMsg, "50%") {
+		t.Fatalf("expected motivational message with percent, got %q", updated.statusMsg)
 	}
 }
