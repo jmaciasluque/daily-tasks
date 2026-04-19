@@ -10,6 +10,17 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 
 ---
 
+## [0.7.1] - 2026-04-17
+
+### CLI
+
+#### Added
+- Marking a task as done from the TUI now shows a motivational footer message
+  with live completion progress (done count and percentage for today's visible
+  tasks), including a special all-done message at 100%.
+
+---
+
 ## [0.7.0] - 2026-04-17
 
 ### All platforms
