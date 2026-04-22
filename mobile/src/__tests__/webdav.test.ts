@@ -2,7 +2,7 @@ jest.mock('../config/env', () => ({
   defaultRemotePath: '/remote.php/dav/files/<username>/.daily-tasks.json',
 }));
 
-import { pollNextcloudLogin, startNextcloudLogin, syncWithRemote, syncWithRemoteState } from '../services/webdav';
+import { pollNextcloudLogin, pushRemoteHistory, startNextcloudLogin, syncWithRemote, syncWithRemoteState } from '../services/webdav';
 import type { Data, History, Settings } from '../types';
 
 const settings: Settings = {
@@ -132,6 +132,69 @@ describe('syncWithRemoteState', () => {
     expect(result.history.days).toHaveLength(2);
     expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(fetchMock.mock.calls[1][0]).toContain('.daily-tasks.history.json');
+  });
+});
+
+describe('pushRemoteHistory', () => {
+  const originalFetch = global.fetch;
+
+  afterEach(() => {
+    Object.defineProperty(global, 'fetch', {
+      configurable: true,
+      writable: true,
+      value: originalFetch,
+    });
+    jest.restoreAllMocks();
+  });
+
+  it('preserves a caller-supplied updated_at instead of restamping it', async () => {
+    const callerUpdatedAt = 1700000000000;
+    let receivedBody: any;
+
+    const fetchMock = jest.fn().mockImplementation(async (_url: string, init: any) => {
+      receivedBody = JSON.parse(init.body as string);
+      return { ok: true, status: 201 } as any;
+    });
+
+    Object.defineProperty(global, 'fetch', {
+      configurable: true,
+      writable: true,
+      value: fetchMock,
+    });
+
+    const history: History = {
+      version: 1,
+      days: [],
+      events: [],
+      updated_at: callerUpdatedAt,
+    };
+
+    await pushRemoteHistory(settings, history);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(receivedBody.updated_at).toBe(callerUpdatedAt);
+  });
+
+  it('stamps updated_at when the caller left it unset', async () => {
+    let receivedBody: any;
+
+    const fetchMock = jest.fn().mockImplementation(async (_url: string, init: any) => {
+      receivedBody = JSON.parse(init.body as string);
+      return { ok: true, status: 201 } as any;
+    });
+
+    Object.defineProperty(global, 'fetch', {
+      configurable: true,
+      writable: true,
+      value: fetchMock,
+    });
+
+    const before = Date.now();
+    await pushRemoteHistory(settings, { version: 1, days: [], events: [] });
+    const after = Date.now();
+
+    expect(receivedBody.updated_at).toBeGreaterThanOrEqual(before);
+    expect(receivedBody.updated_at).toBeLessThanOrEqual(after);
   });
 });
 

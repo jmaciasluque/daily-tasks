@@ -235,6 +235,16 @@ func (s *webServer) handleSync(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, webErrorResponse{Error: err.Error()})
 		return
 	}
+	if internal.LocalPathInNextcloudSyncFolder(s.dataPath) {
+		state, stateErr := s.currentStateLocked("Desktop client is syncing this folder; skipped WebDAV", "in_sync")
+		s.mu.Unlock()
+		if stateErr != nil {
+			writeJSON(w, http.StatusInternalServerError, webErrorResponse{Error: stateErr.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, state)
+		return
+	}
 	history, err := internal.LoadHistory(s.dataPath)
 	if err != nil {
 		s.mu.Unlock()
