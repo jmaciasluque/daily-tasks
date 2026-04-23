@@ -463,6 +463,10 @@ func runSync(args []string) error {
 	if err != nil {
 		return err
 	}
+	if internal.LocalPathInNextcloudSyncFolder(path) {
+		fmt.Println("Desktop client is syncing this folder; skipped WebDAV sync")
+		return nil
+	}
 	history, err := internal.LoadHistory(path)
 	if err != nil {
 		return err
@@ -504,6 +508,10 @@ func runPush(args []string) error {
 	settings, err := internal.LoadWebDAVSettings()
 	if err != nil {
 		return err
+	}
+	if internal.LocalPathInNextcloudSyncFolder(path) {
+		fmt.Println("Desktop client is syncing this folder; skipped WebDAV push")
+		return nil
 	}
 	history, err := internal.LoadHistory(path)
 	if err != nil {

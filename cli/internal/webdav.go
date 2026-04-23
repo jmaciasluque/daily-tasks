@@ -7,13 +7,43 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"path"
+	"path/filepath"
 	"strings"
 	"time"
 )
 
 // ErrRemoteNotFound is returned when the remote file does not exist (HTTP 404).
 var ErrRemoteNotFound = errors.New("remote file not found")
+
+// ErrWebDAVHandledByDesktopClient is returned when the local data file lives
+// inside a Nextcloud desktop-client sync folder, so the CLI should not also
+// push to WebDAV — doing both would race and create "conflicted copy" files.
+var ErrWebDAVHandledByDesktopClient = errors.New("local data file is inside a Nextcloud sync folder; desktop client handles sync")
+
+// LocalPathInNextcloudSyncFolder reports whether dataPath resolves to a
+// location inside the user's Nextcloud desktop-client sync folder (~/Nextcloud).
+// When true, the desktop client already propagates writes to the server, and
+// the CLI should not perform its own WebDAV PUTs against the same file.
+func LocalPathInNextcloudSyncFolder(dataPath string) bool {
+	if dataPath == "" {
+		return false
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return false
+	}
+	abs, err := filepath.Abs(dataPath)
+	if err != nil {
+		return false
+	}
+	rel, err := filepath.Rel(filepath.Join(home, "Nextcloud"), abs)
+	if err != nil {
+		return false
+	}
+	return rel != "." && !strings.HasPrefix(rel, "..")
+}
 
 // WebDAVSettings contains the configuration for WebDAV sync
 type WebDAVSettings struct {
@@ -88,9 +118,15 @@ func FetchRemoteData(settings WebDAVSettings) (Data, error) {
 	return data, nil
 }
 
-// PushRemoteData pushes the data to the remote WebDAV server
+// PushRemoteData pushes the data to the remote WebDAV server.
+// The caller is expected to have set data.LastModified (normally via SaveData).
+// This function no longer restamps it: if it did, the bytes pushed via WebDAV
+// would differ from the bytes on disk, guaranteeing a conflict whenever a
+// Nextcloud desktop client is also syncing the same file.
 func PushRemoteData(settings WebDAVSettings, data Data) error {
-	data.LastModified = time.Now().UnixMilli()
+	if data.LastModified == 0 {
+		data.LastModified = time.Now().UnixMilli()
+	}
 	body, err := json.MarshalIndent(data, "", "  ")
 	if err != nil {
 		return err
@@ -147,7 +183,9 @@ func FetchRemoteHistory(settings WebDAVSettings) (History, error) {
 
 func PushRemoteHistory(settings WebDAVSettings, history History) error {
 	history.Version = historyVersion
-	history.UpdatedAt = time.Now().UnixMilli()
+	if history.UpdatedAt == 0 {
+		history.UpdatedAt = time.Now().UnixMilli()
+	}
 	sortHistory(&history)
 
 	body, err := json.MarshalIndent(history, "", "  ")

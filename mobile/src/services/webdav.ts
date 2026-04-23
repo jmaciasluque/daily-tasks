@@ -182,9 +182,10 @@ export async function pushRemoteData(settings: Settings, data: Data): Promise<vo
 
 export async function pushRemoteHistory(settings: Settings, history: History): Promise<void> {
   const url = buildHistoryWebdavUrl(settings);
+  const normalized = normalizeHistory(history);
   const payload = {
-    ...normalizeHistory(history),
-    updated_at: Date.now(),
+    ...normalized,
+    updated_at: normalized.updated_at || Date.now(),
   };
   const res = await fetch(url, {
     method: 'PUT',

@@ -220,6 +220,29 @@ func TestPushRemoteData(t *testing.T) {
 			t.Error("expected error for 403")
 		}
 	})
+
+	t.Run("preserves caller-supplied LastModified", func(t *testing.T) {
+		var receivedData Data
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			json.NewDecoder(r.Body).Decode(&receivedData)
+			w.WriteHeader(http.StatusCreated)
+		}))
+		defer server.Close()
+
+		settings := WebDAVSettings{URL: server.URL, User: "u", Pass: "p"}
+		data := Data{LastReset: "2026-01-23", NextID: 1, LastModified: 1735689600000}
+
+		if err := PushRemoteData(settings, data); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		// Push must not restamp; the bytes on the wire must equal the bytes
+		// the caller already wrote to disk. Otherwise a Nextcloud desktop
+		// client syncing the same file sees a content mismatch and creates
+		// a "conflicted copy".
+		if receivedData.LastModified != 1735689600000 {
+			t.Errorf("expected LastModified preserved at 1735689600000, got %d", receivedData.LastModified)
+		}
+	})
 }
 
 func TestSyncWithRemote(t *testing.T) {
@@ -329,4 +352,30 @@ func TestHasWebDAVConfig(t *testing.T) {
 			t.Error("expected HasWebDAVConfig to return false")
 		}
 	})
+}
+
+func TestLocalPathInNextcloudSyncFolder(t *testing.T) {
+	fakeHome := t.TempDir()
+	t.Setenv("HOME", fakeHome)
+
+	cases := []struct {
+		name string
+		path string
+		want bool
+	}{
+		{"empty path", "", false},
+		{"inside Nextcloud folder", filepath.Join(fakeHome, "Nextcloud", ".daily-tasks.json"), true},
+		{"nested inside Nextcloud", filepath.Join(fakeHome, "Nextcloud", "sub", "file.json"), true},
+		{"Nextcloud root itself", filepath.Join(fakeHome, "Nextcloud"), false},
+		{"sibling of Nextcloud", filepath.Join(fakeHome, "NextcloudBackup", "file.json"), false},
+		{"outside home", "/etc/daily-tasks.json", false},
+		{"config dir", filepath.Join(fakeHome, ".config", "daily-tasks", "data.json"), false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := LocalPathInNextcloudSyncFolder(c.path); got != c.want {
+				t.Errorf("LocalPathInNextcloudSyncFolder(%q) = %v, want %v", c.path, got, c.want)
+			}
+		})
+	}
 }

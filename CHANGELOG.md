@@ -10,6 +10,41 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 
 ---
 
+## [0.7.2] - 2026-04-22
+
+### CLI
+
+#### Fixed
+- Stop creating Nextcloud "conflicted copy" files when the data file lives
+  inside a folder watched by the Nextcloud desktop client. Previously every
+  save triggered two concurrent writes against the same server file — one
+  from the desktop client uploading the local file, one from the CLI's
+  WebDAV `PUT` — racing each other on etag. The CLI now detects when the
+  local data path resolves inside `~/Nextcloud/` and skips its WebDAV
+  push/sync for that installation, letting the desktop client be the sole
+  syncer. `daily-tasks sync`/`push`, the TUI sync action, and the web UI
+  sync endpoint all honor this.
+- `PushRemoteData` and `PushRemoteHistory` no longer restamp
+  `LastModified`/`UpdatedAt` when the caller has already set them. Before
+  this fix the bytes pushed via WebDAV differed from the bytes `SaveData`
+  had just written to disk, which guaranteed a content-level conflict even
+  when the race was won.
+
+### Mobile
+
+#### Fixed
+- `pushRemoteHistory` now preserves a caller-supplied `updated_at` on the
+  history payload instead of unconditionally restamping it with
+  `Date.now()`, matching the `pushRemoteData` behavior. Keeps bytes-on-wire
+  consistent with the normalized history the rest of the app reasons about.
+
+### Notes
+- If you want the CLI to drive WebDAV sync directly, set `DAILY_TASKS_PATH`
+  to a location outside `~/Nextcloud/` (e.g.
+  `$HOME/.config/daily-tasks/data.json`).
+
+---
+
 ## [0.7.1] - 2026-04-17
 
 ### CLI

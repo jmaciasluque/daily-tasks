@@ -1292,6 +1292,13 @@ func syncRemoteCmd(dataPath string, localData internal.Data) tea.Cmd {
 				Message: err.Error(),
 			}}
 		}
+		if internal.LocalPathInNextcloudSyncFolder(dataPath) {
+			return syncResultMsg{result: internal.SyncStateResult{
+				Data:    localData,
+				Action:  "in_sync",
+				Message: "Desktop client is syncing this folder; skipped WebDAV",
+			}}
+		}
 		history, historyErr := internal.LoadHistory(dataPath)
 		if historyErr != nil {
 			return syncResultMsg{result: internal.SyncStateResult{
@@ -1310,6 +1317,9 @@ func pushRemoteCmd(dataPath string, data internal.Data) tea.Cmd {
 		settings, err := internal.LoadWebDAVSettings()
 		if err != nil {
 			return pushResultMsg{err: err}
+		}
+		if internal.LocalPathInNextcloudSyncFolder(dataPath) {
+			return pushResultMsg{err: internal.ErrWebDAVHandledByDesktopClient}
 		}
 		history, historyErr := internal.LoadHistory(dataPath)
 		if historyErr != nil {
