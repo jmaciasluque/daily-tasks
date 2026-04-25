@@ -2,7 +2,17 @@ jest.mock('../config/env', () => ({
   defaultRemotePath: '/remote.php/dav/files/<username>/.daily-tasks.json',
 }));
 
-import { pollNextcloudLogin, pushRemoteHistory, startNextcloudLogin, syncWithRemote, syncWithRemoteState } from '../services/webdav';
+import {
+  EtagMismatchError,
+  IF_NONE_MATCH_ANY,
+  fetchRemoteData,
+  pollNextcloudLogin,
+  pushRemoteData,
+  pushRemoteHistory,
+  startNextcloudLogin,
+  syncWithRemote,
+  syncWithRemoteState,
+} from '../services/webdav';
 import type { Data, History, Settings } from '../types';
 
 const settings: Settings = {
@@ -44,6 +54,7 @@ describe('syncWithRemote', () => {
     const fetchMock = jest.fn().mockResolvedValue({
       ok: true,
       status: 200,
+      headers: { get: () => '"remote-etag"' },
       json: async () => remoteData,
     } as any);
 
@@ -92,6 +103,7 @@ describe('syncWithRemoteState', () => {
       .mockResolvedValueOnce({
         ok: true,
         status: 200,
+        headers: { get: () => '"data-etag"' },
         json: async () => ({
           last_reset: '2026-03-27',
           next_id: 2,
@@ -103,6 +115,7 @@ describe('syncWithRemoteState', () => {
       .mockResolvedValueOnce({
         ok: true,
         status: 200,
+        headers: { get: () => '"history-etag"' },
         json: async () => ({
           version: 1,
           days: [
@@ -290,5 +303,161 @@ describe('Nextcloud login flow', () => {
       password: 'app-pass',
       remotePath: '/remote.php/dav/files/user/.daily-tasks.json',
     });
+  });
+});
+
+describe('etag-aware WebDAV', () => {
+  const originalFetch = global.fetch;
+
+  afterEach(() => {
+    Object.defineProperty(global, 'fetch', {
+      configurable: true,
+      writable: true,
+      value: originalFetch,
+    });
+    jest.restoreAllMocks();
+  });
+
+  it('fetchRemoteData captures ETag from response headers', async () => {
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: { get: (name: string) => (name === 'ETag' ? '"abc123"' : null) },
+      json: async () => ({
+        last_reset: '2026-03-27',
+        next_id: 1,
+        tasks: [],
+        theme_index: 0,
+        last_modified: 1700000000000,
+      }),
+    } as any);
+
+    Object.defineProperty(global, 'fetch', {
+      configurable: true,
+      writable: true,
+      value: fetchMock,
+    });
+
+    const result = await fetchRemoteData(settings);
+    expect(result.etag).toBe('"abc123"');
+    expect(result.data).not.toBeNull();
+  });
+
+  it('pushRemoteData sends If-Match when given a concrete etag', async () => {
+    let capturedHeaders: Record<string, string> | undefined;
+    const fetchMock = jest.fn().mockImplementation(async (_url: string, init: any) => {
+      capturedHeaders = init.headers;
+      return { ok: true, status: 204 } as any;
+    });
+
+    Object.defineProperty(global, 'fetch', {
+      configurable: true,
+      writable: true,
+      value: fetchMock,
+    });
+
+    const data: Data = {
+      last_reset: '2026-03-27',
+      next_id: 1,
+      tasks: [],
+      theme_index: 0,
+      last_modified: 1700000000000,
+    };
+
+    await pushRemoteData(settings, data, '"abc123"');
+
+    expect(capturedHeaders?.['If-Match']).toBe('"abc123"');
+    expect(capturedHeaders?.['If-None-Match']).toBeUndefined();
+  });
+
+  it('pushRemoteData sends If-None-Match: * for IF_NONE_MATCH_ANY', async () => {
+    let capturedHeaders: Record<string, string> | undefined;
+    const fetchMock = jest.fn().mockImplementation(async (_url: string, init: any) => {
+      capturedHeaders = init.headers;
+      return { ok: true, status: 201 } as any;
+    });
+
+    Object.defineProperty(global, 'fetch', {
+      configurable: true,
+      writable: true,
+      value: fetchMock,
+    });
+
+    await pushRemoteData(
+      settings,
+      { last_reset: '2026-03-27', next_id: 1, tasks: [], theme_index: 0, last_modified: 1700000000000 },
+      IF_NONE_MATCH_ANY,
+    );
+
+    expect(capturedHeaders?.['If-None-Match']).toBe('*');
+    expect(capturedHeaders?.['If-Match']).toBeUndefined();
+  });
+
+  it('pushRemoteData throws EtagMismatchError on 412', async () => {
+    const fetchMock = jest.fn().mockResolvedValue({ ok: false, status: 412 } as any);
+    Object.defineProperty(global, 'fetch', {
+      configurable: true,
+      writable: true,
+      value: fetchMock,
+    });
+
+    await expect(
+      pushRemoteData(
+        settings,
+        { last_reset: '2026-03-27', next_id: 1, tasks: [], theme_index: 0, last_modified: 1700000000000 },
+        '"stale"',
+      ),
+    ).rejects.toBeInstanceOf(EtagMismatchError);
+  });
+
+  it('syncWithRemote retries once after 412 and pulls newer remote', async () => {
+    const localData: Data = {
+      last_reset: '2026-03-27',
+      next_id: 2,
+      tasks: [{ id: 1, title: 'Local', duration: 5, status: 'todo', order: 1 }],
+      theme_index: 0,
+      last_modified: 1700001000000,
+    };
+
+    const fetchMock = jest.fn()
+      // First GET — returns older remote
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: { get: () => '"etag-1"' },
+        json: async () => ({
+          last_reset: '2026-03-27',
+          next_id: 2,
+          tasks: [{ id: 1, title: 'Stale remote', duration: 5, status: 'todo', order: 1 }],
+          theme_index: 0,
+          last_modified: 1700000000000,
+        }),
+      } as any)
+      // First PUT — 412 because something changed server-side
+      .mockResolvedValueOnce({ ok: false, status: 412 } as any)
+      // Retry GET — returns now-newer remote
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: { get: () => '"etag-2"' },
+        json: async () => ({
+          last_reset: '2026-03-27',
+          next_id: 2,
+          tasks: [{ id: 1, title: 'Newer remote', duration: 5, status: 'todo', order: 1 }],
+          theme_index: 0,
+          last_modified: 1700002000000,
+        }),
+      } as any);
+
+    Object.defineProperty(global, 'fetch', {
+      configurable: true,
+      writable: true,
+      value: fetchMock,
+    });
+
+    const result = await syncWithRemote(settings, localData);
+    expect(result.action).toBe('pulled');
+    expect(result.data.tasks[0].title).toBe('Newer remote');
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 });

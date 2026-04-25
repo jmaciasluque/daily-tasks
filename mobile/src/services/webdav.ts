@@ -127,7 +127,36 @@ export async function pollNextcloudLogin(session: LoginFlowSession): Promise<Set
   };
 }
 
-export async function fetchRemoteData(settings: Settings): Promise<Data | null> {
+// Sentinel passed to pushRemoteData / pushRemoteHistory as ifMatch when the
+// caller wants the PUT to succeed only if the resource does not yet exist
+// (translated to an If-None-Match: * request header).
+export const IF_NONE_MATCH_ANY = '*';
+
+// Thrown by pushRemoteData / pushRemoteHistory when the server returns
+// 412 Precondition Failed — i.e. the resource changed since the etag we
+// passed in If-Match was issued. Callers can catch this to refetch and merge.
+export class EtagMismatchError extends Error {
+  constructor(message = 'Remote etag changed since last fetch') {
+    super(message);
+    this.name = 'EtagMismatchError';
+  }
+}
+
+export type FetchedData = { data: Data | null; etag: string };
+export type FetchedHistory = { history: History | null; etag: string };
+
+function applyIfMatch(headers: Record<string, string>, ifMatch?: string): void {
+  if (!ifMatch) {
+    return;
+  }
+  if (ifMatch === IF_NONE_MATCH_ANY) {
+    headers['If-None-Match'] = '*';
+  } else {
+    headers['If-Match'] = ifMatch;
+  }
+}
+
+export async function fetchRemoteData(settings: Settings): Promise<FetchedData> {
   const url = buildWebdavUrl(settings);
   const res = await fetch(url, {
     headers: {
@@ -136,15 +165,16 @@ export async function fetchRemoteData(settings: Settings): Promise<Data | null> 
     },
   });
   if (res.status === 404) {
-    return null;
+    return { data: null, etag: '' };
   }
   if (!res.ok) {
     throw new Error(`Fetch failed: ${res.status}`);
   }
-  return res.json();
+  const data = (await res.json()) as Data;
+  return { data, etag: res.headers.get('ETag') ?? '' };
 }
 
-export async function fetchRemoteHistory(settings: Settings): Promise<History | null> {
+export async function fetchRemoteHistory(settings: Settings): Promise<FetchedHistory> {
   const url = buildHistoryWebdavUrl(settings);
   const res = await fetch(url, {
     headers: {
@@ -153,61 +183,96 @@ export async function fetchRemoteHistory(settings: Settings): Promise<History | 
     },
   });
   if (res.status === 404) {
-    return null;
+    return { history: null, etag: '' };
   }
   if (!res.ok) {
     throw new Error(`History fetch failed: ${res.status}`);
   }
-  return normalizeHistory(await res.json());
+  return { history: normalizeHistory(await res.json()), etag: res.headers.get('ETag') ?? '' };
 }
 
-export async function pushRemoteData(settings: Settings, data: Data): Promise<void> {
+// pushRemoteData PUTs the data to the remote WebDAV server. Pass `ifMatch`
+// to make the request conditional: an opaque ETag to require the resource
+// still match it (If-Match), or IF_NONE_MATCH_ANY to require the resource
+// not yet exist (If-None-Match: *). Throws EtagMismatchError on 412.
+export async function pushRemoteData(settings: Settings, data: Data, ifMatch?: string): Promise<void> {
   const url = buildWebdavUrl(settings);
   const dataWithTimestamp = {
     ...data,
     last_modified: data.last_modified || Date.now(),
   };
+  const headers: Record<string, string> = {
+    Authorization: basicAuthHeader(settings),
+    'Content-Type': 'application/json',
+  };
+  applyIfMatch(headers, ifMatch);
   const res = await fetch(url, {
     method: 'PUT',
-    headers: {
-      Authorization: basicAuthHeader(settings),
-      'Content-Type': 'application/json',
-    },
+    headers,
     body: JSON.stringify(dataWithTimestamp, null, 2),
   });
+  if (res.status === 412) {
+    throw new EtagMismatchError();
+  }
   if (!res.ok) {
     throw new Error(`Save failed: ${res.status}`);
   }
 }
 
-export async function pushRemoteHistory(settings: Settings, history: History): Promise<void> {
+export async function pushRemoteHistory(settings: Settings, history: History, ifMatch?: string): Promise<void> {
   const url = buildHistoryWebdavUrl(settings);
   const normalized = normalizeHistory(history);
   const payload = {
     ...normalized,
     updated_at: normalized.updated_at || Date.now(),
   };
+  const headers: Record<string, string> = {
+    Authorization: basicAuthHeader(settings),
+    'Content-Type': 'application/json',
+  };
+  applyIfMatch(headers, ifMatch);
   const res = await fetch(url, {
     method: 'PUT',
-    headers: {
-      Authorization: basicAuthHeader(settings),
-      'Content-Type': 'application/json',
-    },
+    headers,
     body: JSON.stringify(payload, null, 2),
   });
+  if (res.status === 412) {
+    throw new EtagMismatchError();
+  }
   if (!res.ok) {
     throw new Error(`History save failed: ${res.status}`);
   }
 }
 
+// pushRemoteState writes both data and history unconditionally — used by the
+// dedicated "Save to Nextcloud" flow that is meant to overwrite. Sync flows
+// go through syncWithRemote / syncWithRemoteState instead, which fetch first
+// and use If-Match to avoid clobbering concurrent writers.
 export async function pushRemoteState(settings: Settings, data: Data, history: History): Promise<void> {
   await pushRemoteData(settings, data);
   await pushRemoteHistory(settings, ensureHistorySnapshot(history, data));
 }
 
 export async function syncRemoteHistory(settings: Settings, localHistory: History, currentData: Data): Promise<History> {
+  try {
+    return await mergeAndPushHistory(settings, localHistory, currentData);
+  } catch (err) {
+    if (err instanceof EtagMismatchError) {
+      // Remote etag moved between our fetch and PUT — retry once with the
+      // latest server state folded in.
+      return mergeAndPushHistory(settings, localHistory, currentData);
+    }
+    throw err;
+  }
+}
+
+async function mergeAndPushHistory(
+  settings: Settings,
+  localHistory: History,
+  currentData: Data,
+): Promise<History> {
   const local = normalizeHistory(localHistory);
-  const remote = await fetchRemoteHistory(settings);
+  const { history: remote, etag } = await fetchRemoteHistory(settings);
   const merged = ensureHistorySnapshot(
     mergeHistories(local, remote ?? emptyHistory()),
     currentData,
@@ -215,13 +280,13 @@ export async function syncRemoteHistory(settings: Settings, localHistory: Histor
 
   if (!remote) {
     if (merged.days.length > 0 || merged.events.length > 0) {
-      await pushRemoteHistory(settings, merged);
+      await pushRemoteHistory(settings, merged, IF_NONE_MATCH_ANY);
     }
     return merged;
   }
 
   if (!historyContentEqual(merged, remote)) {
-    await pushRemoteHistory(settings, merged);
+    await pushRemoteHistory(settings, merged, etag);
   }
 
   return merged;
@@ -237,42 +302,54 @@ export type SyncStateResult = SyncResult & {
   history: History;
 };
 
+async function syncOnce(settings: Settings, localData: Data): Promise<SyncResult> {
+  const { data: remoteRaw, etag } = await fetchRemoteData(settings);
+
+  if (!remoteRaw) {
+    await pushRemoteData(settings, localData, IF_NONE_MATCH_ANY);
+    return { data: localData, action: 'pushed', message: 'Created remote file' };
+  }
+
+  const remote = normalizeData(remoteRaw);
+  const local = normalizeData(localData);
+
+  // Never overwrite remote tasks with an empty local state (e.g. fresh install or daily reset with no tasks)
+  if (local.tasks.length === 0 && remote.tasks.length > 0) {
+    return { data: remote, action: 'pulled', message: 'Pulled remote data' };
+  }
+
+  const localTimestamp = local.last_modified || 0;
+  const remoteTimestamp = remote.last_modified || 0;
+
+  if (remoteTimestamp > localTimestamp) {
+    return { data: remote, action: 'pulled', message: 'Pulled newer remote data' };
+  } else if (localTimestamp > remoteTimestamp) {
+    await pushRemoteData(settings, local, etag);
+    return { data: local, action: 'pushed', message: 'Pushed local changes' };
+  }
+
+  return { data: local, action: 'in_sync', message: 'Already in sync' };
+}
+
 export async function syncWithRemote(settings: Settings, localData: Data): Promise<SyncResult> {
   try {
-    const remoteRaw = await fetchRemoteData(settings);
-
-    if (!remoteRaw) {
-      // Remote doesn't exist, push local
-      await pushRemoteData(settings, localData);
-      return { data: localData, action: 'pushed', message: 'Created remote file' };
-    }
-
-    const remote = normalizeData(remoteRaw);
-    const local = normalizeData(localData);
-
-    // Never overwrite remote tasks with an empty local state (e.g. fresh install or daily reset with no tasks)
-    if (local.tasks.length === 0 && remote.tasks.length > 0) {
-      return { data: remote, action: 'pulled', message: 'Pulled remote data' };
-    }
-
-    const localTimestamp = local.last_modified || 0;
-    const remoteTimestamp = remote.last_modified || 0;
-
-    if (remoteTimestamp > localTimestamp) {
-      // Remote is newer
-      return { data: remote, action: 'pulled', message: 'Pulled newer remote data' };
-    } else if (localTimestamp > remoteTimestamp) {
-      // Local is newer
-      await pushRemoteData(settings, local);
-      return { data: local, action: 'pushed', message: 'Pushed local changes' };
-    }
-
-    return { data: local, action: 'in_sync', message: 'Already in sync' };
+    return await syncOnce(settings, localData);
   } catch (err) {
-    return { 
-      data: localData, 
-      action: 'error', 
-      message: `Sync error: ${(err as Error).message}` 
+    if (err instanceof EtagMismatchError) {
+      try {
+        return await syncOnce(settings, localData);
+      } catch (retryErr) {
+        return {
+          data: localData,
+          action: 'error',
+          message: `Sync error: ${(retryErr as Error).message}`,
+        };
+      }
+    }
+    return {
+      data: localData,
+      action: 'error',
+      message: `Sync error: ${(err as Error).message}`,
     };
   }
 }

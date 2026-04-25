@@ -10,6 +10,37 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 
 ---
 
+## [0.7.3] - 2026-04-22
+
+### CLI
+
+#### Changed
+- WebDAV `PUT` requests are now etag-aware. `FetchRemoteData` /
+  `FetchRemoteHistory` capture the response `ETag`, and `PushRemoteData` /
+  `PushRemoteHistory` accept an `ifMatch` argument that translates to either
+  `If-Match: <etag>` (concurrency check) or `If-None-Match: *` (create-only).
+  A `412 Precondition Failed` from the server is mapped to a sentinel
+  `ErrEtagMismatch`, which `SyncWithRemote` / `SyncRemoteHistory` catch and
+  recover from by re-fetching, re-merging, and retrying the push once.
+  Catches the case where another writer (another client, another machine, the
+  Nextcloud desktop client) raced our PUT — instead of silently clobbering or
+  emitting a conflicted-copy file, the second writer pulls the new state and
+  reconciles. `PushRemoteState` (the dedicated "push" command) intentionally
+  retains its unconditional overwrite semantics.
+
+### Mobile
+
+#### Changed
+- `fetchRemoteData` / `fetchRemoteHistory` now return `{ data, etag }` /
+  `{ history, etag }` so callers can pass the captured etag back on the next
+  `PUT`. `pushRemoteData` / `pushRemoteHistory` accept an optional `ifMatch`
+  string (or the `IF_NONE_MATCH_ANY` sentinel for create-only writes); on
+  `412 Precondition Failed` they throw a typed `EtagMismatchError`.
+  `syncWithRemote` and `syncRemoteHistory` catch that error, refetch, and
+  retry once — same convergence behavior as the CLI.
+
+---
+
 ## [0.7.2] - 2026-04-22
 
 ### CLI
