@@ -17,6 +17,16 @@ import (
 // ErrRemoteNotFound is returned when the remote file does not exist (HTTP 404).
 var ErrRemoteNotFound = errors.New("remote file not found")
 
+// ErrEtagMismatch is returned when a conditional PUT fails because the remote
+// resource changed under us (HTTP 412 Precondition Failed). Callers can react
+// by re-fetching and merging or by surfacing the conflict to the user.
+var ErrEtagMismatch = errors.New("remote etag changed since last fetch")
+
+// IfNoneMatchAny is the value used as the ifMatch argument when the caller
+// wants the PUT to succeed only if the resource does not yet exist (i.e.
+// translated by the WebDAV layer to an If-None-Match: * header).
+const IfNoneMatchAny = "*"
+
 // ErrWebDAVHandledByDesktopClient is returned when the local data file lives
 // inside a Nextcloud desktop-client sync folder, so the CLI should not also
 // push to WebDAV — doing both would race and create "conflicted copy" files.
@@ -92,38 +102,48 @@ func LoadWebDAVSettings() (WebDAVSettings, error) {
 	}, nil
 }
 
-// FetchRemoteData fetches the data from the remote WebDAV server
-func FetchRemoteData(settings WebDAVSettings) (Data, error) {
+// FetchRemoteData fetches the data from the remote WebDAV server and returns
+// the response ETag alongside the parsed body. The etag is opaque and should
+// be passed back verbatim to PushRemoteData as ifMatch on a subsequent PUT
+// to detect concurrent writers (412 → ErrEtagMismatch).
+func FetchRemoteData(settings WebDAVSettings) (Data, string, error) {
 	client := &http.Client{Timeout: 15 * time.Second}
 	req, err := http.NewRequest(http.MethodGet, settings.URL, nil)
 	if err != nil {
-		return Data{}, err
+		return Data{}, "", err
 	}
 	req.SetBasicAuth(settings.User, settings.Pass)
 	resp, err := client.Do(req)
 	if err != nil {
-		return Data{}, err
+		return Data{}, "", err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNotFound {
-		return Data{}, ErrRemoteNotFound
+		return Data{}, "", ErrRemoteNotFound
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return Data{}, fmt.Errorf("remote status %d", resp.StatusCode)
+		return Data{}, "", fmt.Errorf("remote status %d", resp.StatusCode)
 	}
 	var data Data
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return Data{}, err
+		return Data{}, "", err
 	}
-	return data, nil
+	return data, resp.Header.Get("ETag"), nil
 }
 
-// PushRemoteData pushes the data to the remote WebDAV server.
-// The caller is expected to have set data.LastModified (normally via SaveData).
-// This function no longer restamps it: if it did, the bytes pushed via WebDAV
-// would differ from the bytes on disk, guaranteeing a conflict whenever a
-// Nextcloud desktop client is also syncing the same file.
-func PushRemoteData(settings WebDAVSettings, data Data) error {
+// PushRemoteData pushes data to the remote WebDAV server. ifMatch carries the
+// ETag from a prior FetchRemoteData call: pass "" to push unconditionally,
+// IfNoneMatchAny to require the resource not yet exist (initial create), or
+// any other value to require the resource still match that ETag. On a 412
+// Precondition Failed response this returns ErrEtagMismatch so callers can
+// refetch and merge instead of silently clobbering a concurrent writer.
+//
+// The caller is expected to have set data.LastModified (normally via
+// SaveData). This function does not restamp it: doing so would make the
+// bytes pushed differ from the bytes on disk, which would itself cause
+// content-level conflicts with any Nextcloud desktop client syncing the
+// same file.
+func PushRemoteData(settings WebDAVSettings, data Data, ifMatch string) error {
 	if data.LastModified == 0 {
 		data.LastModified = time.Now().UnixMilli()
 	}
@@ -138,6 +158,7 @@ func PushRemoteData(settings WebDAVSettings, data Data) error {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	setIfMatch(req, ifMatch)
 	req.SetBasicAuth(settings.User, settings.Pass)
 
 	resp, err := client.Do(req)
@@ -146,42 +167,67 @@ func PushRemoteData(settings WebDAVSettings, data Data) error {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode == http.StatusPreconditionFailed {
+		return ErrEtagMismatch
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("push failed with status %d", resp.StatusCode)
 	}
 	return nil
 }
 
-func FetchRemoteHistory(settings WebDAVSettings) (History, error) {
+// setIfMatch translates an ifMatch argument into the corresponding precondition
+// header. The IfNoneMatchAny sentinel maps to If-None-Match: * (only allow
+// create); any other non-empty value goes onto If-Match verbatim.
+func setIfMatch(req *http.Request, ifMatch string) {
+	switch ifMatch {
+	case "":
+		// no precondition
+	case IfNoneMatchAny:
+		req.Header.Set("If-None-Match", "*")
+	default:
+		req.Header.Set("If-Match", ifMatch)
+	}
+}
+
+// FetchRemoteHistory returns the parsed history payload along with the ETag
+// for the resource (empty if the server did not provide one). Pass the etag
+// back to PushRemoteHistory as ifMatch on a subsequent PUT to detect
+// concurrent writers.
+func FetchRemoteHistory(settings WebDAVSettings) (History, string, error) {
 	client := &http.Client{Timeout: 15 * time.Second}
 	req, err := http.NewRequest(http.MethodGet, buildHistoryWebDAVURL(settings.URL), nil)
 	if err != nil {
-		return History{}, err
+		return History{}, "", err
 	}
 	req.SetBasicAuth(settings.User, settings.Pass)
 	resp, err := client.Do(req)
 	if err != nil {
-		return History{}, err
+		return History{}, "", err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNotFound {
-		return History{}, ErrRemoteNotFound
+		return History{}, "", ErrRemoteNotFound
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return History{}, fmt.Errorf("remote history status %d", resp.StatusCode)
+		return History{}, "", fmt.Errorf("remote history status %d", resp.StatusCode)
 	}
 	var history History
 	if err := json.NewDecoder(resp.Body).Decode(&history); err != nil {
-		return History{}, err
+		return History{}, "", err
 	}
 	if history.Version == 0 {
 		history.Version = historyVersion
 	}
 	sortHistory(&history)
-	return history, nil
+	return history, resp.Header.Get("ETag"), nil
 }
 
-func PushRemoteHistory(settings WebDAVSettings, history History) error {
+// PushRemoteHistory pushes the history payload. The ifMatch argument follows
+// the same conventions as PushRemoteData: "" for unconditional, IfNoneMatchAny
+// for create-only, otherwise an opaque ETag from a prior fetch.
+// Returns ErrEtagMismatch on 412.
+func PushRemoteHistory(settings WebDAVSettings, history History, ifMatch string) error {
 	history.Version = historyVersion
 	if history.UpdatedAt == 0 {
 		history.UpdatedAt = time.Now().UnixMilli()
@@ -199,6 +245,7 @@ func PushRemoteHistory(settings WebDAVSettings, history History) error {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	setIfMatch(req, ifMatch)
 	req.SetBasicAuth(settings.User, settings.Pass)
 
 	resp, err := client.Do(req)
@@ -207,33 +254,57 @@ func PushRemoteHistory(settings WebDAVSettings, history History) error {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode == http.StatusPreconditionFailed {
+		return ErrEtagMismatch
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("history push failed with status %d", resp.StatusCode)
 	}
 	return nil
 }
 
+// PushRemoteState pushes both data and history unconditionally — used by the
+// dedicated "push" command (`daily-tasks push`, the TUI push action). It does
+// not check the remote etag; it deliberately overwrites whatever is on the
+// server. Sync flows go through SyncWithRemote / SyncStateWithRemote, which
+// fetch first and use If-Match to avoid clobbering concurrent writers.
 func PushRemoteState(settings WebDAVSettings, data Data, history History) error {
-	if err := PushRemoteData(settings, data); err != nil {
+	if err := PushRemoteData(settings, data, ""); err != nil {
 		return err
 	}
-	return PushRemoteHistory(settings, HistoryWithCurrentSnapshot(history, data, time.Now().UnixMilli()))
+	return PushRemoteHistory(settings, HistoryWithCurrentSnapshot(history, data, time.Now().UnixMilli()), "")
 }
 
+// SyncRemoteHistory fetches the remote history, merges it with the supplied
+// local history (and current snapshot), and pushes the merged result back if
+// it differs from what the server has. Pushes are conditional on the ETag
+// captured at fetch time; on ErrEtagMismatch the function refetches and
+// retries once, picking up whatever a concurrent writer just deposited.
 func SyncRemoteHistory(settings WebDAVSettings, local History, current Data) (History, error) {
-	remote, err := FetchRemoteHistory(settings)
-	if err != nil && !errors.Is(err, ErrRemoteNotFound) {
+	merged, err := mergeAndPushHistory(settings, local, current)
+	if err == nil || !errors.Is(err, ErrEtagMismatch) {
+		return merged, err
+	}
+	// Etag changed mid-sync: another writer pushed between our fetch and
+	// our PUT. Retry once with the latest remote state folded in.
+	return mergeAndPushHistory(settings, local, current)
+}
+
+func mergeAndPushHistory(settings WebDAVSettings, local History, current Data) (History, error) {
+	remote, etag, err := FetchRemoteHistory(settings)
+	notFound := errors.Is(err, ErrRemoteNotFound)
+	if err != nil && !notFound {
 		return History{}, err
 	}
-	if errors.Is(err, ErrRemoteNotFound) {
+	if notFound {
 		remote = History{Version: historyVersion}
 	}
 
 	merged := HistoryWithCurrentSnapshot(MergeHistories(local, remote), current, time.Now().UnixMilli())
 
-	if errors.Is(err, ErrRemoteNotFound) {
+	if notFound {
 		if len(merged.Days) > 0 || len(merged.Events) > 0 {
-			if pushErr := PushRemoteHistory(settings, merged); pushErr != nil {
+			if pushErr := PushRemoteHistory(settings, merged, IfNoneMatchAny); pushErr != nil {
 				return History{}, pushErr
 			}
 		}
@@ -241,7 +312,7 @@ func SyncRemoteHistory(settings WebDAVSettings, local History, current Data) (Hi
 	}
 
 	if !HistoryContentEqual(merged, remote) {
-		if pushErr := PushRemoteHistory(settings, merged); pushErr != nil {
+		if pushErr := PushRemoteHistory(settings, merged, etag); pushErr != nil {
 			return History{}, pushErr
 		}
 	}
@@ -263,18 +334,40 @@ type SyncStateResult struct {
 	Message string
 }
 
-// SyncWithRemote performs a bi-directional sync with conflict detection
+// SyncWithRemote performs a bi-directional sync with conflict detection.
+// Pushes are conditional on the ETag captured at fetch time, so a concurrent
+// writer can be detected (412) instead of silently clobbered. On
+// ErrEtagMismatch the function refetches once and re-evaluates: typically the
+// remote is now newer, so the result becomes a pull rather than another push.
 func SyncWithRemote(settings WebDAVSettings, local Data) SyncResult {
-	remote, err := FetchRemoteData(settings)
+	result, retry := syncOnce(settings, local)
+	if !retry {
+		return result
+	}
+	result, _ = syncOnce(settings, local)
+	return result
+}
+
+// syncOnce runs a single sync attempt. The bool return is true when the
+// caller should retry (because a concurrent writer changed the etag between
+// our fetch and our PUT).
+func syncOnce(settings WebDAVSettings, local Data) (SyncResult, bool) {
+	remote, etag, err := FetchRemoteData(settings)
 	if err != nil {
-		// If remote doesn't exist, push local
+		// If remote doesn't exist, push local with If-None-Match: *
+		// so we don't clobber a file another client just created.
 		if errors.Is(err, ErrRemoteNotFound) {
-			if pushErr := PushRemoteData(settings, local); pushErr != nil {
-				return SyncResult{Data: local, Action: "error", Message: fmt.Sprintf("Push failed: %s", pushErr)}
+			pushErr := PushRemoteData(settings, local, IfNoneMatchAny)
+			if errors.Is(pushErr, ErrEtagMismatch) {
+				// Lost the create race — retry path will pull or merge.
+				return SyncResult{Data: local, Action: "error", Message: "Remote was created by another writer; retrying"}, true
 			}
-			return SyncResult{Data: local, Action: "pushed", Message: "Created remote file"}
+			if pushErr != nil {
+				return SyncResult{Data: local, Action: "error", Message: fmt.Sprintf("Push failed: %s", pushErr)}, false
+			}
+			return SyncResult{Data: local, Action: "pushed", Message: "Created remote file"}, false
 		}
-		return SyncResult{Data: local, Action: "error", Message: err.Error()}
+		return SyncResult{Data: local, Action: "error", Message: err.Error()}, false
 	}
 
 	remote = NormalizeData(remote)
@@ -282,23 +375,27 @@ func SyncWithRemote(settings WebDAVSettings, local Data) SyncResult {
 
 	// Never overwrite remote tasks with an empty local state (e.g. fresh install)
 	if len(local.Tasks) == 0 && len(remote.Tasks) > 0 {
-		return SyncResult{Data: remote, Action: "pulled", Message: "Pulled remote data"}
+		return SyncResult{Data: remote, Action: "pulled", Message: "Pulled remote data"}, false
 	}
 
 	// Check for conflicts using LastModified
 	if remote.LastModified > local.LastModified {
 		// Remote is newer, pull it
-		return SyncResult{Data: remote, Action: "pulled", Message: "Pulled newer remote data"}
+		return SyncResult{Data: remote, Action: "pulled", Message: "Pulled newer remote data"}, false
 	} else if local.LastModified > remote.LastModified {
-		// Local is newer, push it
-		if pushErr := PushRemoteData(settings, local); pushErr != nil {
-			return SyncResult{Data: local, Action: "error", Message: fmt.Sprintf("Push failed: %s", pushErr)}
+		// Local is newer, push it conditionally on the etag we just saw.
+		pushErr := PushRemoteData(settings, local, etag)
+		if errors.Is(pushErr, ErrEtagMismatch) {
+			return SyncResult{Data: local, Action: "error", Message: "Remote changed during sync; retrying"}, true
 		}
-		return SyncResult{Data: local, Action: "pushed", Message: "Pushed local changes"}
+		if pushErr != nil {
+			return SyncResult{Data: local, Action: "error", Message: fmt.Sprintf("Push failed: %s", pushErr)}, false
+		}
+		return SyncResult{Data: local, Action: "pushed", Message: "Pushed local changes"}, false
 	}
 
 	// Same timestamp, no action needed
-	return SyncResult{Data: local, Action: "in_sync", Message: "Already in sync"}
+	return SyncResult{Data: local, Action: "in_sync", Message: "Already in sync"}, false
 }
 
 func SyncStateWithRemote(settings WebDAVSettings, local Data, history History) SyncStateResult {

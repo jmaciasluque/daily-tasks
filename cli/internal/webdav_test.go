@@ -101,7 +101,7 @@ func TestFetchRemoteData(t *testing.T) {
 			Pass: "testpass",
 		}
 
-		result, err := FetchRemoteData(settings)
+		result, _, err := FetchRemoteData(settings)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -113,6 +113,23 @@ func TestFetchRemoteData(t *testing.T) {
 		}
 	})
 
+	t.Run("returns ETag from response", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("ETag", "\"abc-123\"")
+			json.NewEncoder(w).Encode(Data{NextID: 1})
+		}))
+		defer server.Close()
+
+		settings := WebDAVSettings{URL: server.URL, User: "u", Pass: "p"}
+		_, etag, err := FetchRemoteData(settings)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if etag != "\"abc-123\"" {
+			t.Errorf("expected etag \"abc-123\", got %q", etag)
+		}
+	})
+
 	t.Run("not found", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNotFound)
@@ -120,7 +137,7 @@ func TestFetchRemoteData(t *testing.T) {
 		defer server.Close()
 
 		settings := WebDAVSettings{URL: server.URL, User: "user", Pass: "pass"}
-		_, err := FetchRemoteData(settings)
+		_, _, err := FetchRemoteData(settings)
 		if !errors.Is(err, ErrRemoteNotFound) {
 			t.Errorf("expected ErrRemoteNotFound, got %v", err)
 		}
@@ -133,7 +150,7 @@ func TestFetchRemoteData(t *testing.T) {
 		defer server.Close()
 
 		settings := WebDAVSettings{URL: server.URL, User: "user", Pass: "pass"}
-		_, err := FetchRemoteData(settings)
+		_, _, err := FetchRemoteData(settings)
 		if err == nil {
 			t.Fatal("expected error for 500")
 		}
@@ -149,7 +166,7 @@ func TestFetchRemoteData(t *testing.T) {
 		defer server.Close()
 
 		settings := WebDAVSettings{URL: server.URL, User: "user", Pass: "pass"}
-		_, err := FetchRemoteData(settings)
+		_, _, err := FetchRemoteData(settings)
 		if err == nil {
 			t.Error("expected error for 500")
 		}
@@ -195,7 +212,7 @@ func TestPushRemoteData(t *testing.T) {
 			Tasks:     []Task{{ID: 1, Title: "Push Test", Status: "todo", Order: 1}},
 		}
 
-		err := PushRemoteData(settings, data)
+		err := PushRemoteData(settings, data, "")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -215,7 +232,7 @@ func TestPushRemoteData(t *testing.T) {
 		defer server.Close()
 
 		settings := WebDAVSettings{URL: server.URL, User: "user", Pass: "pass"}
-		err := PushRemoteData(settings, Data{})
+		err := PushRemoteData(settings, Data{}, "")
 		if err == nil {
 			t.Error("expected error for 403")
 		}
@@ -232,7 +249,7 @@ func TestPushRemoteData(t *testing.T) {
 		settings := WebDAVSettings{URL: server.URL, User: "u", Pass: "p"}
 		data := Data{LastReset: "2026-01-23", NextID: 1, LastModified: 1735689600000}
 
-		if err := PushRemoteData(settings, data); err != nil {
+		if err := PushRemoteData(settings, data, ""); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		// Push must not restamp; the bytes on the wire must equal the bytes
@@ -329,6 +346,107 @@ func TestSyncWithRemote(t *testing.T) {
 		}
 		if !pushed {
 			t.Error("expected push to be called")
+		}
+	})
+}
+
+func TestPushRemoteDataConditional(t *testing.T) {
+	t.Run("sends If-Match when ifMatch is a concrete etag", func(t *testing.T) {
+		var got string
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			got = r.Header.Get("If-Match")
+			w.WriteHeader(http.StatusCreated)
+		}))
+		defer server.Close()
+
+		settings := WebDAVSettings{URL: server.URL, User: "u", Pass: "p"}
+		if err := PushRemoteData(settings, Data{LastModified: 1}, "\"abc\""); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got != "\"abc\"" {
+			t.Errorf("expected If-Match \"abc\", got %q", got)
+		}
+	})
+
+	t.Run("sends If-None-Match: * for IfNoneMatchAny", func(t *testing.T) {
+		var ifMatch, ifNoneMatch string
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ifMatch = r.Header.Get("If-Match")
+			ifNoneMatch = r.Header.Get("If-None-Match")
+			w.WriteHeader(http.StatusCreated)
+		}))
+		defer server.Close()
+
+		settings := WebDAVSettings{URL: server.URL, User: "u", Pass: "p"}
+		if err := PushRemoteData(settings, Data{LastModified: 1}, IfNoneMatchAny); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if ifMatch != "" {
+			t.Errorf("expected no If-Match, got %q", ifMatch)
+		}
+		if ifNoneMatch != "*" {
+			t.Errorf("expected If-None-Match \"*\", got %q", ifNoneMatch)
+		}
+	})
+
+	t.Run("412 maps to ErrEtagMismatch", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusPreconditionFailed)
+		}))
+		defer server.Close()
+
+		settings := WebDAVSettings{URL: server.URL, User: "u", Pass: "p"}
+		err := PushRemoteData(settings, Data{LastModified: 1}, "\"stale\"")
+		if !errors.Is(err, ErrEtagMismatch) {
+			t.Errorf("expected ErrEtagMismatch, got %v", err)
+		}
+	})
+}
+
+func TestSyncWithRemote_EtagRetry(t *testing.T) {
+	t.Run("412 on push triggers refetch and pulls newer remote", func(t *testing.T) {
+		// Two remote states: v1 (older) and v2 (newer than local). The first
+		// GET returns v1 with etag "v1". Local has a fresher timestamp than
+		// v1, so SyncWithRemote tries to push with If-Match "v1". The server
+		// rejects with 412 because between fetch and put a concurrent writer
+		// uploaded v2. The retry GETs v2 and pulls it.
+		v1 := Data{LastReset: "2026-04-25", NextID: 1, Tasks: []Task{{ID: 1, Title: "v1", Status: "todo", Order: 1}}, LastModified: 1000}
+		v2 := Data{LastReset: "2026-04-25", NextID: 1, Tasks: []Task{{ID: 1, Title: "v2", Status: "todo", Order: 1}}, LastModified: 3000}
+
+		var getCount, putCount int
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodGet:
+				getCount++
+				if getCount == 1 {
+					w.Header().Set("ETag", "\"v1\"")
+					json.NewEncoder(w).Encode(v1)
+				} else {
+					w.Header().Set("ETag", "\"v2\"")
+					json.NewEncoder(w).Encode(v2)
+				}
+			case http.MethodPut:
+				putCount++
+				w.WriteHeader(http.StatusPreconditionFailed)
+			}
+		}))
+		defer server.Close()
+
+		settings := WebDAVSettings{URL: server.URL, User: "u", Pass: "p"}
+		local := Data{LastReset: "2026-04-25", NextID: 1, Tasks: []Task{{ID: 1, Title: "local", Status: "todo", Order: 1}}, LastModified: 2000}
+
+		result := SyncWithRemote(settings, local)
+		if result.Action != "pulled" {
+			t.Errorf("expected action 'pulled' after 412 retry, got '%s' (msg=%q)", result.Action, result.Message)
+		}
+		if result.Data.Tasks[0].Title != "v2" {
+			t.Errorf("expected v2 tasks after retry, got %+v", result.Data.Tasks)
+		}
+		if getCount != 2 {
+			t.Errorf("expected 2 GETs (initial + retry), got %d", getCount)
+		}
+		if putCount != 1 {
+			t.Errorf("expected 1 PUT (the failed conditional one), got %d", putCount)
 		}
 	})
 }
