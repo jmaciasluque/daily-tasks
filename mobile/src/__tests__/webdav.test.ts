@@ -146,6 +146,66 @@ describe('syncWithRemoteState', () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(fetchMock.mock.calls[1][0]).toContain('.daily-tasks.history.json');
   });
+
+  it('still applies pulled data when the history sync 412s twice', async () => {
+    const localData: Data = {
+      last_reset: '2026-03-27',
+      next_id: 2,
+      tasks: [{ id: 1, title: 'Local stale task', duration: 5, status: 'todo', order: 1 }],
+      theme_index: 0,
+      last_modified: 1700000000000,
+    };
+    const localHistory: History = { version: 1, days: [], events: [] };
+
+    const fetchMock = jest.fn()
+      // 1) data GET — returns newer remote, triggers a pull (no PUT for data)
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: { get: () => '"data-etag"' },
+        json: async () => ({
+          last_reset: '2026-03-27',
+          next_id: 2,
+          tasks: [{ id: 1, title: 'CLI newer task', duration: 5, status: 'todo', order: 1 }],
+          theme_index: 5,
+          last_modified: 1700001000,
+        }),
+      } as any)
+      // 2) history GET (first attempt)
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: { get: () => '"history-etag-1"' },
+        json: async () => ({ version: 1, days: [], events: [] }),
+      } as any)
+      // 3) history PUT — first 412
+      .mockResolvedValueOnce({ ok: false, status: 412 } as any)
+      // 4) history GET (retry)
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: { get: () => '"history-etag-2"' },
+        json: async () => ({ version: 1, days: [], events: [] }),
+      } as any)
+      // 5) history PUT — second 412 (gives up after this)
+      .mockResolvedValueOnce({ ok: false, status: 412 } as any);
+
+    Object.defineProperty(global, 'fetch', {
+      configurable: true,
+      writable: true,
+      value: fetchMock,
+    });
+
+    const result = await syncWithRemoteState(settings, localData, localHistory);
+
+    // Data was pulled successfully — UI should be able to apply this.
+    expect(result.action).toBe('pulled');
+    expect(result.data.tasks[0].title).toBe('CLI newer task');
+    expect(result.data.theme_index).toBe(5);
+    // History merge gave up but the action is still 'pulled', not 'error',
+    // so the UI's `if (result.action !== 'error')` branch applies the data.
+    expect(result.message).toContain('history merge deferred');
+  });
 });
 
 describe('pushRemoteHistory', () => {

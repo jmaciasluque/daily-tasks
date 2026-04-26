@@ -10,7 +10,7 @@ import {
   saveCachedHistory,
 } from './storage';
 import { recordDataChange } from './history';
-import { isSettingsComplete, pushRemoteState } from './webdav';
+import { isSettingsComplete, syncWithRemoteState } from './webdav';
 
 const NOTIFICATION_IDS_KEY = 'dailyTasksNotificationIds';
 
@@ -62,7 +62,10 @@ export async function syncNotificationActionUpdate(data: Data, history: import('
   }
 
   try {
-    await pushRemoteState(settings, data, history);
+    // Use the etag-aware sync path so background notification updates can't
+    // blind-overwrite a concurrent foreground write. Local change remains in
+    // AsyncStorage even if the remote write loses its race.
+    await syncWithRemoteState(settings, data, history);
   } catch {
     // Keep the local change even if remote sync fails.
   }

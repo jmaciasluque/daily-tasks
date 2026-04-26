@@ -66,13 +66,14 @@ jest.mock('../services/webdav', () => ({
     remotePath?: string;
   }) => !!(settings.baseUrl && settings.username && settings.password && settings.remotePath)),
   pushRemoteState: jest.fn().mockResolvedValue(undefined),
+  syncWithRemoteState: jest.fn().mockResolvedValue({ data: {}, history: { version: 1, days: [], events: [] }, action: 'pushed', message: 'Pushed local changes' }),
 }));
 
 import * as Notifications from 'expo-notifications';
 import * as TaskManager from 'expo-task-manager';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { loadAppConfig, loadCachedData, saveCachedData } from '../services/storage';
-import { pushRemoteState } from '../services/webdav';
+import { pushRemoteState, syncWithRemoteState } from '../services/webdav';
 import {
   setupNotifications,
   rescheduleAllNotifications,
@@ -89,6 +90,7 @@ const mockLoadCachedData = loadCachedData as jest.MockedFunction<typeof loadCach
 const mockLoadAppConfig = loadAppConfig as jest.MockedFunction<typeof loadAppConfig>;
 const mockSaveCachedData = saveCachedData as jest.MockedFunction<typeof saveCachedData>;
 const mockPushRemoteState = pushRemoteState as jest.Mock;
+const mockSyncWithRemoteState = syncWithRemoteState as jest.Mock;
 const mockSchedule = Notifications.scheduleNotificationAsync as jest.Mock;
 const mockSetChannel = Notifications.setNotificationChannelAsync as jest.Mock;
 const mockCancelAll = Notifications.cancelAllScheduledNotificationsAsync as jest.Mock;
@@ -279,8 +281,8 @@ describe('handleNotificationAction', () => {
 
     await handleNotificationAction(makeResponse('done', 1));
 
-    expect(mockPushRemoteState).toHaveBeenCalledTimes(1);
-    const pushed = mockPushRemoteState.mock.calls[0][1] as Data;
+    expect(mockSyncWithRemoteState).toHaveBeenCalledTimes(1);
+    const pushed = mockSyncWithRemoteState.mock.calls[0][1] as Data;
     expect(pushed.tasks.find(t => t.id === 1)?.status).toBe('done');
   });
 
@@ -297,7 +299,7 @@ describe('handleNotificationAction', () => {
         remotePath: '/remote.php/dav/files/user/.daily-tasks.json',
       },
     });
-    mockPushRemoteState.mockRejectedValueOnce(new Error('network down'));
+    mockSyncWithRemoteState.mockRejectedValueOnce(new Error('network down'));
 
     const result = await handleNotificationAction(makeResponse('skip', 1));
 

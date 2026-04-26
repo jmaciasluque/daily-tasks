@@ -11,7 +11,7 @@ import {
   saveCachedHistory,
   nextcloudSettingsFromConfig,
 } from '../services/storage';
-import { isSettingsComplete, pushRemoteState, syncWithRemoteState } from '../services/webdav';
+import { isSettingsComplete, syncWithRemoteState } from '../services/webdav';
 import { rescheduleAllNotifications } from '../services/notifications';
 import { appVariant } from '../config/env';
 
@@ -106,8 +106,20 @@ export function useTaskData() {
     }
 
     try {
-      await pushRemoteState(settings, dataToSave, historyToSave);
-      setStatusMsg('Saved to Nextcloud.');
+      // Auto-save goes through the etag-aware sync flow rather than a blind
+      // PUT so concurrent writers (other clients, the Nextcloud desktop
+      // client) can't be silently clobbered. Local edits have a fresh
+      // last_modified, so this nearly always pushes; in the rare race where
+      // a remote write lands first, the result reconciles instead.
+      const result = await syncWithRemoteState(settings, dataToSave, historyToSave);
+      if (result.action === 'pulled') {
+        const synced = normalizeData(result.data);
+        dataRef.current = synced;
+        historyRef.current = result.history;
+        setData(synced);
+        setHistory(result.history);
+      }
+      setStatusMsg(result.message);
     } catch (err) {
       setStatusMsg(`Save error: ${(err as Error).message}`);
     }

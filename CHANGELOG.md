@@ -10,6 +10,31 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 
 ---
 
+## [0.7.4] - 2026-04-26
+
+### Mobile
+
+#### Fixed
+- A pure-pull sync that only failed on the secondary history merge no longer
+  swallows the (already successful) data pull. Previously `syncWithRemoteState`
+  let an `EtagMismatchError` from `syncRemoteHistory` propagate past the
+  point where the data result would have been applied to the UI, so the
+  user saw a "Sync error" footer and the screen stayed on stale state even
+  though the WebDAV `GET` had succeeded. The history merge is now caught
+  separately: data is applied as before, the message becomes "...; history
+  merge deferred", and the next sync attempt reconciles the history file.
+- The auto-save that fires after every mobile edit (mark done, skip, edit,
+  delete, reorder) and after every notification action (Mark Done /
+  Skip from a system notification) now goes through the etag-aware
+  `syncWithRemoteState` path instead of the unconditional `pushRemoteState`
+  overwrite. Concurrent writers — another mobile/CLI client, the Nextcloud
+  desktop client uploading the laptop's copy — no longer get silently
+  clobbered by a per-edit blind `PUT`. The dedicated "Save to Nextcloud"
+  flow is unchanged and keeps `pushRemoteState`'s explicit overwrite
+  semantics.
+
+---
+
 ## [0.7.3] - 2026-04-22
 
 ### CLI
