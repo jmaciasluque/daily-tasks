@@ -220,7 +220,7 @@ func (s *webServer) handleSync(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	settings, err := internal.LoadWebDAVSettings()
+	backend, err := internal.LoadWebDAVBackend()
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, webErrorResponse{
 			Error: "Nextcloud is not configured for this installation yet.",
@@ -252,7 +252,7 @@ func (s *webServer) handleSync(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result := internal.SyncStateWithRemote(settings, data, history)
+	result := internal.SyncStateWithRemote(backend, data, history)
 	if result.Action == "error" {
 		state := s.stateResponse(result.Data, result.Message, result.Action)
 		s.mu.Unlock()
@@ -481,7 +481,7 @@ func (s *webServer) stateResponse(data internal.Data, message, action string) we
 		DataPath:       s.dataPath,
 		Backend:        backend,
 		Message:        message,
-		SyncConfigured: internal.HasWebDAVConfig(),
+		SyncConfigured: internal.HasBackendConfig(),
 		Version:        internal.Version,
 	}
 }

@@ -1284,7 +1284,7 @@ func (m *model) moveTaskToCol(targetCol int) (bool, int) {
 
 func syncRemoteCmd(dataPath string, localData internal.Data) tea.Cmd {
 	return func() tea.Msg {
-		settings, err := internal.LoadWebDAVSettings()
+		backend, err := internal.LoadWebDAVBackend()
 		if err != nil {
 			return syncResultMsg{result: internal.SyncStateResult{
 				Data:    localData,
@@ -1307,14 +1307,14 @@ func syncRemoteCmd(dataPath string, localData internal.Data) tea.Cmd {
 				Message: historyErr.Error(),
 			}}
 		}
-		result := internal.SyncStateWithRemote(settings, localData, history)
+		result := internal.SyncStateWithRemote(backend, localData, history)
 		return syncResultMsg{result: result}
 	}
 }
 
 func pushRemoteCmd(dataPath string, data internal.Data) tea.Cmd {
 	return func() tea.Msg {
-		settings, err := internal.LoadWebDAVSettings()
+		backend, err := internal.LoadWebDAVBackend()
 		if err != nil {
 			return pushResultMsg{err: err}
 		}
@@ -1325,7 +1325,7 @@ func pushRemoteCmd(dataPath string, data internal.Data) tea.Cmd {
 		if historyErr != nil {
 			return pushResultMsg{err: historyErr}
 		}
-		err = internal.PushRemoteState(settings, data, history)
+		err = internal.PushRemoteState(backend, data, history)
 		return pushResultMsg{err: err}
 	}
 }

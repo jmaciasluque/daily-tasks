@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-func TestLoadWebDAVSettings(t *testing.T) {
+func TestLoadWebDAVBackend(t *testing.T) {
 	// Point DAILY_TASKS_CONFIG to an empty temp dir so the real user config
 	// is never picked up. Tests exercise the legacy env-var fallback path.
 	isolateConfig := func(t *testing.T) {
@@ -24,15 +24,15 @@ func TestLoadWebDAVSettings(t *testing.T) {
 		t.Setenv("DAILY_TASKS_WEBDAV_USER", "testuser")
 		t.Setenv("DAILY_TASKS_WEBDAV_PASS", "testpass")
 
-		settings, err := LoadWebDAVSettings()
+		b, err := LoadWebDAVBackend()
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if settings.User != "testuser" {
-			t.Errorf("expected User 'testuser', got '%s'", settings.User)
+		if b.User != "testuser" {
+			t.Errorf("expected User 'testuser', got '%s'", b.User)
 		}
-		if settings.Pass != "testpass" {
-			t.Errorf("expected Pass 'testpass', got '%s'", settings.Pass)
+		if b.Pass != "testpass" {
+			t.Errorf("expected Pass 'testpass', got '%s'", b.Pass)
 		}
 	})
 
@@ -41,7 +41,7 @@ func TestLoadWebDAVSettings(t *testing.T) {
 		t.Setenv("DAILY_TASKS_WEBDAV_USER", "testuser")
 		t.Setenv("DAILY_TASKS_WEBDAV_PASS", "testpass")
 
-		_, err := LoadWebDAVSettings()
+		_, err := LoadWebDAVBackend()
 		if err == nil {
 			t.Error("expected error for missing URL")
 		}
@@ -52,7 +52,7 @@ func TestLoadWebDAVSettings(t *testing.T) {
 		t.Setenv("DAILY_TASKS_WEBDAV_URL", "https://example.com/dav")
 		t.Setenv("DAILY_TASKS_WEBDAV_PASS", "testpass")
 
-		_, err := LoadWebDAVSettings()
+		_, err := LoadWebDAVBackend()
 		if err == nil {
 			t.Error("expected error for missing user")
 		}
@@ -63,7 +63,7 @@ func TestLoadWebDAVSettings(t *testing.T) {
 		t.Setenv("DAILY_TASKS_WEBDAV_URL", "https://example.com/dav")
 		t.Setenv("DAILY_TASKS_WEBDAV_USER", "testuser")
 
-		_, err := LoadWebDAVSettings()
+		_, err := LoadWebDAVBackend()
 		if err == nil {
 			t.Error("expected error for missing password")
 		}
@@ -95,13 +95,9 @@ func TestFetchRemoteData(t *testing.T) {
 		}))
 		defer server.Close()
 
-		settings := WebDAVSettings{
-			URL:  server.URL,
-			User: "testuser",
-			Pass: "testpass",
-		}
+		backend := NewWebDAVBackend(server.URL, "testuser", "testpass")
 
-		result, _, err := FetchRemoteData(settings)
+		result, _, err := FetchRemoteData(backend)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -120,8 +116,8 @@ func TestFetchRemoteData(t *testing.T) {
 		}))
 		defer server.Close()
 
-		settings := WebDAVSettings{URL: server.URL, User: "u", Pass: "p"}
-		_, etag, err := FetchRemoteData(settings)
+		backend := NewWebDAVBackend(server.URL, "u", "p")
+		_, etag, err := FetchRemoteData(backend)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -136,8 +132,8 @@ func TestFetchRemoteData(t *testing.T) {
 		}))
 		defer server.Close()
 
-		settings := WebDAVSettings{URL: server.URL, User: "user", Pass: "pass"}
-		_, _, err := FetchRemoteData(settings)
+		backend := NewWebDAVBackend(server.URL, "user", "pass")
+		_, _, err := FetchRemoteData(backend)
 		if !errors.Is(err, ErrRemoteNotFound) {
 			t.Errorf("expected ErrRemoteNotFound, got %v", err)
 		}
@@ -149,8 +145,8 @@ func TestFetchRemoteData(t *testing.T) {
 		}))
 		defer server.Close()
 
-		settings := WebDAVSettings{URL: server.URL, User: "user", Pass: "pass"}
-		_, _, err := FetchRemoteData(settings)
+		backend := NewWebDAVBackend(server.URL, "user", "pass")
+		_, _, err := FetchRemoteData(backend)
 		if err == nil {
 			t.Fatal("expected error for 500")
 		}
@@ -165,8 +161,8 @@ func TestFetchRemoteData(t *testing.T) {
 		}))
 		defer server.Close()
 
-		settings := WebDAVSettings{URL: server.URL, User: "user", Pass: "pass"}
-		_, _, err := FetchRemoteData(settings)
+		backend := NewWebDAVBackend(server.URL, "user", "pass")
+		_, _, err := FetchRemoteData(backend)
 		if err == nil {
 			t.Error("expected error for 500")
 		}
@@ -200,11 +196,7 @@ func TestPushRemoteData(t *testing.T) {
 		}))
 		defer server.Close()
 
-		settings := WebDAVSettings{
-			URL:  server.URL,
-			User: "testuser",
-			Pass: "testpass",
-		}
+		backend := NewWebDAVBackend(server.URL, "testuser", "testpass")
 
 		data := Data{
 			LastReset: "2026-01-23",
@@ -212,7 +204,7 @@ func TestPushRemoteData(t *testing.T) {
 			Tasks:     []Task{{ID: 1, Title: "Push Test", Status: "todo", Order: 1}},
 		}
 
-		err := PushRemoteData(settings, data, "")
+		err := PushRemoteData(backend, data, "")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -231,8 +223,8 @@ func TestPushRemoteData(t *testing.T) {
 		}))
 		defer server.Close()
 
-		settings := WebDAVSettings{URL: server.URL, User: "user", Pass: "pass"}
-		err := PushRemoteData(settings, Data{}, "")
+		backend := NewWebDAVBackend(server.URL, "user", "pass")
+		err := PushRemoteData(backend, Data{}, "")
 		if err == nil {
 			t.Error("expected error for 403")
 		}
@@ -246,10 +238,10 @@ func TestPushRemoteData(t *testing.T) {
 		}))
 		defer server.Close()
 
-		settings := WebDAVSettings{URL: server.URL, User: "u", Pass: "p"}
+		backend := NewWebDAVBackend(server.URL, "u", "p")
 		data := Data{LastReset: "2026-01-23", NextID: 1, LastModified: 1735689600000}
 
-		if err := PushRemoteData(settings, data, ""); err != nil {
+		if err := PushRemoteData(backend, data, ""); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		// Push must not restamp; the bytes on the wire must equal the bytes
@@ -276,7 +268,7 @@ func TestSyncWithRemote(t *testing.T) {
 		}))
 		defer server.Close()
 
-		settings := WebDAVSettings{URL: server.URL, User: "user", Pass: "pass"}
+		backend := NewWebDAVBackend(server.URL, "user", "pass")
 		localData := Data{
 			LastReset:    "2026-01-23",
 			NextID:       5,
@@ -284,7 +276,7 @@ func TestSyncWithRemote(t *testing.T) {
 			LastModified: 1000000000,
 		}
 
-		result := SyncWithRemote(settings, localData)
+		result := SyncWithRemote(backend, localData)
 		if result.Action != "pulled" {
 			t.Errorf("expected action 'pulled', got '%s'", result.Action)
 		}
@@ -309,13 +301,13 @@ func TestSyncWithRemote(t *testing.T) {
 		}))
 		defer server.Close()
 
-		settings := WebDAVSettings{URL: server.URL, User: "user", Pass: "pass"}
+		backend := NewWebDAVBackend(server.URL, "user", "pass")
 		localData := Data{
 			NextID:       15,
 			LastModified: 2000000000,
 		}
 
-		result := SyncWithRemote(settings, localData)
+		result := SyncWithRemote(backend, localData)
 		if result.Action != "pushed" {
 			t.Errorf("expected action 'pushed', got '%s'", result.Action)
 		}
@@ -337,10 +329,10 @@ func TestSyncWithRemote(t *testing.T) {
 		}))
 		defer server.Close()
 
-		settings := WebDAVSettings{URL: server.URL, User: "user", Pass: "pass"}
+		backend := NewWebDAVBackend(server.URL, "user", "pass")
 		localData := Data{NextID: 5}
 
-		result := SyncWithRemote(settings, localData)
+		result := SyncWithRemote(backend, localData)
 		if result.Action != "pushed" {
 			t.Errorf("expected action 'pushed', got '%s'", result.Action)
 		}
@@ -359,8 +351,8 @@ func TestPushRemoteDataConditional(t *testing.T) {
 		}))
 		defer server.Close()
 
-		settings := WebDAVSettings{URL: server.URL, User: "u", Pass: "p"}
-		if err := PushRemoteData(settings, Data{LastModified: 1}, "\"abc\""); err != nil {
+		backend := NewWebDAVBackend(server.URL, "u", "p")
+		if err := PushRemoteData(backend, Data{LastModified: 1}, "\"abc\""); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if got != "\"abc\"" {
@@ -377,8 +369,8 @@ func TestPushRemoteDataConditional(t *testing.T) {
 		}))
 		defer server.Close()
 
-		settings := WebDAVSettings{URL: server.URL, User: "u", Pass: "p"}
-		if err := PushRemoteData(settings, Data{LastModified: 1}, IfNoneMatchAny); err != nil {
+		backend := NewWebDAVBackend(server.URL, "u", "p")
+		if err := PushRemoteData(backend, Data{LastModified: 1}, IfNoneMatchAny); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if ifMatch != "" {
@@ -395,8 +387,8 @@ func TestPushRemoteDataConditional(t *testing.T) {
 		}))
 		defer server.Close()
 
-		settings := WebDAVSettings{URL: server.URL, User: "u", Pass: "p"}
-		err := PushRemoteData(settings, Data{LastModified: 1}, "\"stale\"")
+		backend := NewWebDAVBackend(server.URL, "u", "p")
+		err := PushRemoteData(backend, Data{LastModified: 1}, "\"stale\"")
 		if !errors.Is(err, ErrEtagMismatch) {
 			t.Errorf("expected ErrEtagMismatch, got %v", err)
 		}
@@ -432,10 +424,10 @@ func TestSyncWithRemote_EtagRetry(t *testing.T) {
 		}))
 		defer server.Close()
 
-		settings := WebDAVSettings{URL: server.URL, User: "u", Pass: "p"}
+		backend := NewWebDAVBackend(server.URL, "u", "p")
 		local := Data{LastReset: "2026-04-25", NextID: 1, Tasks: []Task{{ID: 1, Title: "local", Status: "todo", Order: 1}}, LastModified: 2000}
 
-		result := SyncWithRemote(settings, local)
+		result := SyncWithRemote(backend, local)
 		if result.Action != "pulled" {
 			t.Errorf("expected action 'pulled' after 412 retry, got '%s' (msg=%q)", result.Action, result.Message)
 		}
@@ -451,23 +443,23 @@ func TestSyncWithRemote_EtagRetry(t *testing.T) {
 	})
 }
 
-func TestHasWebDAVConfig(t *testing.T) {
+func TestHasBackendConfig(t *testing.T) {
 	t.Run("configured", func(t *testing.T) {
 		t.Setenv("DAILY_TASKS_CONFIG", filepath.Join(t.TempDir(), "config.json"))
 		t.Setenv("DAILY_TASKS_WEBDAV_URL", "https://example.com")
 		t.Setenv("DAILY_TASKS_WEBDAV_USER", "user")
 		t.Setenv("DAILY_TASKS_WEBDAV_PASS", "pass")
 
-		if !HasWebDAVConfig() {
-			t.Error("expected HasWebDAVConfig to return true")
+		if !HasBackendConfig() {
+			t.Error("expected HasBackendConfig to return true")
 		}
 	})
 
 	t.Run("not configured", func(t *testing.T) {
 		t.Setenv("DAILY_TASKS_CONFIG", filepath.Join(t.TempDir(), "config.json"))
 
-		if HasWebDAVConfig() {
-			t.Error("expected HasWebDAVConfig to return false")
+		if HasBackendConfig() {
+			t.Error("expected HasBackendConfig to return false")
 		}
 	})
 }

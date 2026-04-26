@@ -9,9 +9,11 @@ import {
   saveCachedData,
   loadCachedHistory,
   saveCachedHistory,
+  backendFromConfig,
   nextcloudSettingsFromConfig,
 } from '../services/storage';
-import { isSettingsComplete, syncWithRemoteState } from '../services/webdav';
+import { isSettingsComplete, WebDAVBackend } from '../services/backend_webdav';
+import { syncWithRemoteState } from '../services/sync';
 import { rescheduleAllNotifications } from '../services/notifications';
 import { appVariant } from '../config/env';
 
@@ -26,7 +28,8 @@ export function useTaskData() {
   const historyRef = useRef(history);
 
   const settings = useMemo(() => nextcloudSettingsFromConfig(config), [config]);
-  const nextcloudConfigured = config.backend === 'nextcloud' && isSettingsComplete(settings);
+  const backend = useMemo(() => backendFromConfig(config), [config]);
+  const nextcloudConfigured = backend !== null;
 
   useEffect(() => {
     dataRef.current = data;
@@ -66,8 +69,10 @@ export function useTaskData() {
   }, [data, history, initialized]);
 
   const syncFromRemote = useCallback(async (overrideSettings?: Settings) => {
-    const activeSettings = overrideSettings ?? settings;
-    if (config.backend !== 'nextcloud' || !isSettingsComplete(activeSettings)) {
+    // Setup-screen path passes freshly-obtained settings before they're
+    // persisted; everywhere else we use the memoized backend from config.
+    const activeBackend = overrideSettings ? new WebDAVBackend(overrideSettings) : backend;
+    if (!activeBackend) {
       setStatusMsg(config.backend === 'local' ? 'Using local-only backend.' : 'Connect Nextcloud first.');
       return;
     }
@@ -77,7 +82,7 @@ export function useTaskData() {
       const latestLocal = await loadCachedData();
       const latestHistory = await loadCachedHistory();
       const localReset = applyDailyResetWithHistory(latestLocal, latestHistory);
-      const result = await syncWithRemoteState(activeSettings, localReset.data, localReset.history);
+      const result = await syncWithRemoteState(activeBackend, localReset.data, localReset.history);
       if (result.action !== 'error') {
         const synced = normalizeData(result.data);
         const syncedReset = applyDailyResetWithHistory(synced, result.history, Date.now());
@@ -92,16 +97,16 @@ export function useTaskData() {
     } finally {
       setSyncing(false);
     }
-  }, [config.backend, settings]);
+  }, [backend, config.backend]);
 
   useEffect(() => {
     if (initialized && nextcloudConfigured) {
       syncFromRemote();
     }
-  }, [initialized, nextcloudConfigured, settings.baseUrl, settings.username, settings.password, settings.remotePath, syncFromRemote]);
+  }, [initialized, nextcloudConfigured, syncFromRemote]);
 
   const pushToRemote = useCallback(async (dataToSave: Data, historyToSave: History) => {
-    if (!nextcloudConfigured) {
+    if (!backend) {
       return;
     }
 
@@ -111,7 +116,7 @@ export function useTaskData() {
       // client) can't be silently clobbered. Local edits have a fresh
       // last_modified, so this nearly always pushes; in the rare race where
       // a remote write lands first, the result reconciles instead.
-      const result = await syncWithRemoteState(settings, dataToSave, historyToSave);
+      const result = await syncWithRemoteState(backend, dataToSave, historyToSave);
       if (result.action === 'pulled') {
         const synced = normalizeData(result.data);
         dataRef.current = synced;
@@ -123,7 +128,7 @@ export function useTaskData() {
     } catch (err) {
       setStatusMsg(`Save error: ${(err as Error).message}`);
     }
-  }, [nextcloudConfigured, settings]);
+  }, [backend]);
 
   const updateData = useCallback((updater: (prev: Data) => Data) => {
     const before = dataRef.current;

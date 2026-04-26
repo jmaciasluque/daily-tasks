@@ -10,6 +10,42 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 
 ---
 
+## [0.8.0] - 2026-04-26
+
+### CLI + Mobile
+
+#### Changed
+- Extracted a `Backend` abstraction (CLI: `cli/internal/backend.go`,
+  Mobile: `mobile/src/services/backend.ts`) with two operations —
+  `Fetch(key)` and `Push(key, bytes, ifMatch)` — plus shared sentinels
+  (`ErrRemoteNotFound`/`EtagMismatchError`, `IfNoneMatchAny`) and
+  well-known keys (`KeyData`, `KeyHistory`). The previous WebDAV-specific
+  `FetchRemoteData` / `PushRemoteData` / etc. now live in `sync.go` /
+  `sync.ts` and operate on any `Backend`. The WebDAV implementation
+  (`WebDAVBackend`) lives in `backend_webdav.go` / `backend_webdav.ts`
+  and translates the well-known keys to its own URL scheme. The
+  Nextcloud login flow helpers (`startNextcloudLogin`, `pollNextcloudLogin`)
+  ride alongside the WebDAV backend since they're auth setup, not data
+  plane.
+- `LoadWebDAVSettings` → `LoadWebDAVBackend` (CLI). Mobile gains a
+  `backendFromConfig(config)` factory in `storage.ts` that returns a
+  ready-to-use `Backend` or `null` when setup is incomplete.
+- `HasWebDAVConfig` → `HasBackendConfig` to match the new naming.
+- The Nextcloud-desktop-client detection (`LocalPathInNextcloudSyncFolder`
+  + `ErrWebDAVHandledByDesktopClient`) moved to a dedicated
+  `nextcloud_desktop.go` since it's a Nextcloud-with-desktop-client
+  quirk that lives outside the `Backend` abstraction.
+
+No behavior change. No config migrations. Existing Nextcloud setups
+continue to work as-is. The wire format (JSON bytes, etag headers,
+`If-Match` / `If-None-Match: *`) is unchanged.
+
+This is groundwork for adding additional backends (generic WebDAV,
+Google Drive, Dropbox, our own server) in subsequent releases without
+having to retouch the sync logic.
+
+---
+
 ## [0.7.4] - 2026-04-26
 
 ### Mobile

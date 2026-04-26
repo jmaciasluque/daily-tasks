@@ -459,7 +459,7 @@ func runSync(args []string) error {
 	}
 	_ = reset
 
-	settings, err := internal.LoadWebDAVSettings()
+	backend, err := internal.LoadWebDAVBackend()
 	if err != nil {
 		return err
 	}
@@ -472,7 +472,7 @@ func runSync(args []string) error {
 		return err
 	}
 
-	result := internal.SyncStateWithRemote(settings, data, history)
+	result := internal.SyncStateWithRemote(backend, data, history)
 	if result.Action == "error" {
 		return errors.New(result.Message)
 	}
@@ -505,7 +505,7 @@ func runPush(args []string) error {
 	}
 	_ = reset
 
-	settings, err := internal.LoadWebDAVSettings()
+	backend, err := internal.LoadWebDAVBackend()
 	if err != nil {
 		return err
 	}
@@ -517,7 +517,7 @@ func runPush(args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := internal.PushRemoteState(settings, data, history); err != nil {
+	if err := internal.PushRemoteState(backend, data, history); err != nil {
 		return err
 	}
 	fmt.Println("Pushed local data")
