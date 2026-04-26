@@ -365,10 +365,24 @@ export async function syncWithRemoteState(
   }
 
   const normalizedData = normalizeData(result.data);
-  const history = await syncRemoteHistory(settings, localHistory, normalizedData);
-  return {
-    ...result,
-    data: normalizedData,
-    history,
-  };
+
+  // The history merge can lose its etag race even when the data sync above
+  // succeeded. Surface that as an info-level warning rather than failing the
+  // whole sync — the user-visible task data should still be applied to the
+  // UI. The next sync attempt will reconcile the history file.
+  try {
+    const history = await syncRemoteHistory(settings, localHistory, normalizedData);
+    return {
+      ...result,
+      data: normalizedData,
+      history,
+    };
+  } catch (err) {
+    return {
+      ...result,
+      data: normalizedData,
+      history: normalizeHistory(localHistory),
+      message: `${result.message}; history merge deferred (${(err as Error).message})`,
+    };
+  }
 }
