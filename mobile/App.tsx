@@ -22,7 +22,7 @@ import { useTaskData } from './src/hooks/useTaskData';
 import { orderedTasks } from './src/services/data';
 import { buildStatsSummary } from './src/services/history';
 import { setupNotifications, handleNotificationAction, scheduleTestNotification } from './src/services/notifications';
-import { pollNextcloudLogin, startNextcloudLogin, type LoginFlowSession } from './src/services/webdav';
+import { pollNextcloudLogin, startNextcloudLogin, type LoginFlowSession } from './src/services/backend_webdav';
 import { getTheme, isLightColor } from './src/theme/themes';
 import type { Task, TaskStatus } from './src/types';
 import { appVariant, appVersionSuffix, appVersion, commitHash } from './src/config/env';

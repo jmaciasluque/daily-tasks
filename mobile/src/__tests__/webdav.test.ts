@@ -2,17 +2,15 @@ jest.mock('../config/env', () => ({
   defaultRemotePath: '/remote.php/dav/files/<username>/.daily-tasks.json',
 }));
 
+import { EtagMismatchError, IF_NONE_MATCH_ANY } from '../services/backend';
+import { WebDAVBackend, pollNextcloudLogin, startNextcloudLogin } from '../services/backend_webdav';
 import {
-  EtagMismatchError,
-  IF_NONE_MATCH_ANY,
   fetchRemoteData,
-  pollNextcloudLogin,
   pushRemoteData,
   pushRemoteHistory,
-  startNextcloudLogin,
   syncWithRemote,
   syncWithRemoteState,
-} from '../services/webdav';
+} from '../services/sync';
 import type { Data, History, Settings } from '../types';
 
 const settings: Settings = {
@@ -21,6 +19,8 @@ const settings: Settings = {
   password: 'pass',
   remotePath: '/remote.php/dav/files/user/.daily-tasks.json',
 };
+
+const backend = new WebDAVBackend(settings);
 
 describe('syncWithRemote', () => {
   const originalFetch = global.fetch;
@@ -55,7 +55,7 @@ describe('syncWithRemote', () => {
       ok: true,
       status: 200,
       headers: { get: () => '"remote-etag"' },
-      json: async () => remoteData,
+      text: async () => JSON.stringify(remoteData),
     } as any);
 
     Object.defineProperty(global, 'fetch', {
@@ -64,7 +64,7 @@ describe('syncWithRemote', () => {
       value: fetchMock,
     });
 
-    const result = await syncWithRemote(settings, localData);
+    const result = await syncWithRemote(backend, localData);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(result.action).toBe('pulled');
@@ -104,7 +104,7 @@ describe('syncWithRemoteState', () => {
         ok: true,
         status: 200,
         headers: { get: () => '"data-etag"' },
-        json: async () => ({
+        text: async () => JSON.stringify({
           last_reset: '2026-03-27',
           next_id: 2,
           tasks: [{ id: 1, title: 'CLI newer task', duration: 5, status: 'todo', order: 1 }],
@@ -116,7 +116,7 @@ describe('syncWithRemoteState', () => {
         ok: true,
         status: 200,
         headers: { get: () => '"history-etag"' },
-        json: async () => ({
+        text: async () => JSON.stringify({
           version: 1,
           days: [
             {
@@ -138,7 +138,7 @@ describe('syncWithRemoteState', () => {
       value: fetchMock,
     });
 
-    const result = await syncWithRemoteState(settings, localData, localHistory);
+    const result = await syncWithRemoteState(backend, localData, localHistory);
 
     expect(result.action).toBe('pulled');
     expect(result.data.tasks[0].title).toBe('CLI newer task');
@@ -163,7 +163,7 @@ describe('syncWithRemoteState', () => {
         ok: true,
         status: 200,
         headers: { get: () => '"data-etag"' },
-        json: async () => ({
+        text: async () => JSON.stringify({
           last_reset: '2026-03-27',
           next_id: 2,
           tasks: [{ id: 1, title: 'CLI newer task', duration: 5, status: 'todo', order: 1 }],
@@ -176,7 +176,7 @@ describe('syncWithRemoteState', () => {
         ok: true,
         status: 200,
         headers: { get: () => '"history-etag-1"' },
-        json: async () => ({ version: 1, days: [], events: [] }),
+        text: async () => JSON.stringify({ version: 1, days: [], events: [] }),
       } as any)
       // 3) history PUT — first 412
       .mockResolvedValueOnce({ ok: false, status: 412 } as any)
@@ -185,7 +185,7 @@ describe('syncWithRemoteState', () => {
         ok: true,
         status: 200,
         headers: { get: () => '"history-etag-2"' },
-        json: async () => ({ version: 1, days: [], events: [] }),
+        text: async () => JSON.stringify({ version: 1, days: [], events: [] }),
       } as any)
       // 5) history PUT — second 412 (gives up after this)
       .mockResolvedValueOnce({ ok: false, status: 412 } as any);
@@ -196,7 +196,7 @@ describe('syncWithRemoteState', () => {
       value: fetchMock,
     });
 
-    const result = await syncWithRemoteState(settings, localData, localHistory);
+    const result = await syncWithRemoteState(backend, localData, localHistory);
 
     // Data was pulled successfully — UI should be able to apply this.
     expect(result.action).toBe('pulled');
@@ -242,7 +242,7 @@ describe('pushRemoteHistory', () => {
       updated_at: callerUpdatedAt,
     };
 
-    await pushRemoteHistory(settings, history);
+    await pushRemoteHistory(backend, history);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(receivedBody.updated_at).toBe(callerUpdatedAt);
@@ -263,7 +263,7 @@ describe('pushRemoteHistory', () => {
     });
 
     const before = Date.now();
-    await pushRemoteHistory(settings, { version: 1, days: [], events: [] });
+    await pushRemoteHistory(backend, { version: 1, days: [], events: [] });
     const after = Date.now();
 
     expect(receivedBody.updated_at).toBeGreaterThanOrEqual(before);
@@ -383,7 +383,7 @@ describe('etag-aware WebDAV', () => {
       ok: true,
       status: 200,
       headers: { get: (name: string) => (name === 'ETag' ? '"abc123"' : null) },
-      json: async () => ({
+      text: async () => JSON.stringify({
         last_reset: '2026-03-27',
         next_id: 1,
         tasks: [],
@@ -398,7 +398,7 @@ describe('etag-aware WebDAV', () => {
       value: fetchMock,
     });
 
-    const result = await fetchRemoteData(settings);
+    const result = await fetchRemoteData(backend);
     expect(result.etag).toBe('"abc123"');
     expect(result.data).not.toBeNull();
   });
@@ -424,7 +424,7 @@ describe('etag-aware WebDAV', () => {
       last_modified: 1700000000000,
     };
 
-    await pushRemoteData(settings, data, '"abc123"');
+    await pushRemoteData(backend, data, '"abc123"');
 
     expect(capturedHeaders?.['If-Match']).toBe('"abc123"');
     expect(capturedHeaders?.['If-None-Match']).toBeUndefined();
@@ -444,7 +444,7 @@ describe('etag-aware WebDAV', () => {
     });
 
     await pushRemoteData(
-      settings,
+      backend,
       { last_reset: '2026-03-27', next_id: 1, tasks: [], theme_index: 0, last_modified: 1700000000000 },
       IF_NONE_MATCH_ANY,
     );
@@ -463,7 +463,7 @@ describe('etag-aware WebDAV', () => {
 
     await expect(
       pushRemoteData(
-        settings,
+        backend,
         { last_reset: '2026-03-27', next_id: 1, tasks: [], theme_index: 0, last_modified: 1700000000000 },
         '"stale"',
       ),
@@ -485,7 +485,7 @@ describe('etag-aware WebDAV', () => {
         ok: true,
         status: 200,
         headers: { get: () => '"etag-1"' },
-        json: async () => ({
+        text: async () => JSON.stringify({
           last_reset: '2026-03-27',
           next_id: 2,
           tasks: [{ id: 1, title: 'Stale remote', duration: 5, status: 'todo', order: 1 }],
@@ -500,7 +500,7 @@ describe('etag-aware WebDAV', () => {
         ok: true,
         status: 200,
         headers: { get: () => '"etag-2"' },
-        json: async () => ({
+        text: async () => JSON.stringify({
           last_reset: '2026-03-27',
           next_id: 2,
           tasks: [{ id: 1, title: 'Newer remote', duration: 5, status: 'todo', order: 1 }],
@@ -515,7 +515,7 @@ describe('etag-aware WebDAV', () => {
       value: fetchMock,
     });
 
-    const result = await syncWithRemote(settings, localData);
+    const result = await syncWithRemote(backend, localData);
     expect(result.action).toBe('pulled');
     expect(result.data.tasks[0].title).toBe('Newer remote');
     expect(fetchMock).toHaveBeenCalledTimes(3);

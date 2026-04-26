@@ -2,15 +2,15 @@ import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { Data } from '../types';
 import {
+  backendFromConfig,
   loadAppConfig,
   loadCachedData,
   loadCachedHistory,
-  nextcloudSettingsFromConfig,
   saveCachedData,
   saveCachedHistory,
 } from './storage';
 import { recordDataChange } from './history';
-import { isSettingsComplete, syncWithRemoteState } from './webdav';
+import { syncWithRemoteState } from './sync';
 
 const NOTIFICATION_IDS_KEY = 'dailyTasksNotificationIds';
 
@@ -56,8 +56,8 @@ function applyNotificationAction(
 
 export async function syncNotificationActionUpdate(data: Data, history: import('../types').History): Promise<void> {
   const config = await loadAppConfig();
-  const settings = nextcloudSettingsFromConfig(config);
-  if (config.backend !== 'nextcloud' || !isSettingsComplete(settings)) {
+  const backend = backendFromConfig(config);
+  if (!backend) {
     return;
   }
 
@@ -65,7 +65,7 @@ export async function syncNotificationActionUpdate(data: Data, history: import('
     // Use the etag-aware sync path so background notification updates can't
     // blind-overwrite a concurrent foreground write. Local change remains in
     // AsyncStorage even if the remote write loses its race.
-    await syncWithRemoteState(settings, data, history);
+    await syncWithRemoteState(backend, data, history);
   } catch {
     // Keep the local change even if remote sync fails.
   }

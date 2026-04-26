@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { AppConfig, Data, History, Settings } from '../types';
-import { defaultSettings } from './webdav';
+import { defaultSettings, WebDAVBackend } from './backend_webdav';
+import type { Backend } from './backend';
 import { emptyData, normalizeData } from './data';
 import { emptyHistory, normalizeHistory } from './history';
 import { storagePrefix } from '../config/env';
@@ -112,6 +113,20 @@ export async function saveAppConfig(config: AppConfig): Promise<void> {
 
 export function nextcloudSettingsFromConfig(config: AppConfig): Settings {
   return { ...defaultSettings, ...(config.nextcloud ?? {}) };
+}
+
+// backendFromConfig returns a runtime Backend for the configured remote
+// store, or null when the user has not finished setup. Today the only
+// remote backend is WebDAV (Nextcloud); future backends slot in here.
+export function backendFromConfig(config: AppConfig): Backend | null {
+  if (config.backend !== 'nextcloud') {
+    return null;
+  }
+  const settings = nextcloudSettingsFromConfig(config);
+  if (!settings.baseUrl || !settings.username || !settings.password || !settings.remotePath) {
+    return null;
+  }
+  return new WebDAVBackend(settings);
 }
 
 export async function loadCachedData(): Promise<Data> {

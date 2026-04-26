@@ -54,18 +54,20 @@ jest.mock('../services/storage', () => ({
     remotePath: '',
     ...(config.nextcloud ?? {}),
   })),
+  // backendFromConfig returns a stub Backend object when the test config
+  // looks complete; null otherwise. The actual Backend is irrelevant
+  // because syncWithRemoteState is mocked at the module level.
+  backendFromConfig: jest.fn((config: { backend?: string; nextcloud?: { baseUrl?: string; username?: string; password?: string; remotePath?: string } }) => {
+    if (config.backend !== 'nextcloud') return null;
+    const nc = config.nextcloud ?? {};
+    if (!nc.baseUrl || !nc.username || !nc.password || !nc.remotePath) return null;
+    return { fetch: jest.fn(), push: jest.fn() };
+  }),
   saveCachedData: jest.fn().mockResolvedValue(undefined),
   saveCachedHistory: jest.fn().mockResolvedValue(undefined),
 }));
 
-jest.mock('../services/webdav', () => ({
-  isSettingsComplete: jest.fn((settings: {
-    baseUrl?: string;
-    username?: string;
-    password?: string;
-    remotePath?: string;
-  }) => !!(settings.baseUrl && settings.username && settings.password && settings.remotePath)),
-  pushRemoteState: jest.fn().mockResolvedValue(undefined),
+jest.mock('../services/sync', () => ({
   syncWithRemoteState: jest.fn().mockResolvedValue({ data: {}, history: { version: 1, days: [], events: [] }, action: 'pushed', message: 'Pushed local changes' }),
 }));
 
@@ -73,7 +75,7 @@ import * as Notifications from 'expo-notifications';
 import * as TaskManager from 'expo-task-manager';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { loadAppConfig, loadCachedData, saveCachedData } from '../services/storage';
-import { pushRemoteState, syncWithRemoteState } from '../services/webdav';
+import { syncWithRemoteState } from '../services/sync';
 import {
   setupNotifications,
   rescheduleAllNotifications,
@@ -89,7 +91,6 @@ import type { Data, Task } from '../types';
 const mockLoadCachedData = loadCachedData as jest.MockedFunction<typeof loadCachedData>;
 const mockLoadAppConfig = loadAppConfig as jest.MockedFunction<typeof loadAppConfig>;
 const mockSaveCachedData = saveCachedData as jest.MockedFunction<typeof saveCachedData>;
-const mockPushRemoteState = pushRemoteState as jest.Mock;
 const mockSyncWithRemoteState = syncWithRemoteState as jest.Mock;
 const mockSchedule = Notifications.scheduleNotificationAsync as jest.Mock;
 const mockSetChannel = Notifications.setNotificationChannelAsync as jest.Mock;
