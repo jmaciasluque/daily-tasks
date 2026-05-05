@@ -10,6 +10,16 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 
 ---
 
+## [0.8.1] - 2026-05-05
+
+### Mobile
+
+#### Changed
+- Replaced the main-screen `Backend` action with `Config` and moved backend,
+  sync status, build, update, and test-build details into that configuration
+  sheet.
+- Removed the main-screen test notification button.
+
 ## [0.8.0] - 2026-04-26
 
 ### CLI + Mobile
