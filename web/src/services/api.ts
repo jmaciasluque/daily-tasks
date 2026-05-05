@@ -1,4 +1,4 @@
-import type { Data, ServerState, StatsSummary } from '../types';
+import type { Data, NextcloudSetupPoll, NextcloudSetupStart, ServerState, StatsSummary } from '../types';
 import { normalizeData } from './data';
 
 type ErrorPayload = {
@@ -63,4 +63,25 @@ export async function fetchServerStats(from: string, to: string): Promise<StatsS
   const params = new URLSearchParams({ from, to });
   const payload = await requestJSON<{ stats: StatsSummary }>(`/api/stats?${params.toString()}`);
   return payload.stats;
+}
+
+export async function setupLocalBackend(): Promise<void> {
+  await requestJSON<{ status: string }>('/api/setup/local', {
+    method: 'POST',
+  });
+}
+
+export async function startNextcloudSetup(serverUrl: string): Promise<NextcloudSetupStart> {
+  return requestJSON<NextcloudSetupStart>('/api/setup/nextcloud/start', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ server_url: serverUrl }),
+  });
+}
+
+export async function pollNextcloudSetup(sessionId: string): Promise<NextcloudSetupPoll> {
+  const params = new URLSearchParams({ session: sessionId });
+  return requestJSON<NextcloudSetupPoll>(`/api/setup/nextcloud/poll?${params.toString()}`);
 }

@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useTaskData } from './hooks/useTaskData';
 import { TaskRow, TaskEditor, SettingsModal } from './components';
 import { orderedTasks } from './services/data';
-import { fetchServerStats } from './services/api';
+import { fetchServerStats, pollNextcloudSetup, startNextcloudSetup } from './services/api';
 import { getTheme, isLightColor } from './theme/themes';
 import type { StatsSummary, Task, TaskStatus } from './types';
 import { appVersion } from './config/env';
@@ -51,6 +51,7 @@ export default function App() {
     statusMsg,
     syncing,
     refreshing,
+    refreshServerState,
     reloadFromDisk,
     syncFromRemote,
     addTask,
@@ -59,6 +60,7 @@ export default function App() {
     toggleTaskStatus,
     skipTask,
     cycleTheme,
+    chooseLocalBackend,
   } = useTaskData();
 
   const [screen, setScreen] = useState<Screen>('tasks');
@@ -172,6 +174,7 @@ export default function App() {
     skipped: theme.focusBorder,
     todo: theme.muted,
   };
+  const canSync = serverState?.backend === 'nextcloud' && serverState.sync_configured;
 
   const maxDailyTasks = useMemo(() => {
     if (!stats || stats.daily.length === 0) {
@@ -224,8 +227,21 @@ export default function App() {
         <button onClick={() => reloadFromDisk()} style={{ borderRadius: 12, padding: '12px 16px', border: `1px solid ${theme.border}`, background: 'transparent', color: theme.text, cursor: 'pointer', fontSize: 14 }}>
           {refreshing ? 'Refreshing...' : 'Refresh'}
         </button>
-        <button onClick={() => syncFromRemote()} style={{ borderRadius: 12, padding: '12px 16px', border: `1px solid ${theme.border}`, background: 'transparent', color: theme.text, cursor: 'pointer', fontSize: 14 }}>
-          {syncing ? 'Syncing...' : 'Sync'}
+        <button
+          onClick={() => syncFromRemote()}
+          disabled={!canSync || syncing}
+          style={{
+            borderRadius: 12,
+            padding: '12px 16px',
+            border: `1px solid ${theme.border}`,
+            background: 'transparent',
+            color: canSync ? theme.text : theme.muted,
+            cursor: canSync && !syncing ? 'pointer' : 'default',
+            fontSize: 14,
+            opacity: canSync ? 1 : 0.65,
+          }}
+        >
+          {syncing ? 'Syncing...' : canSync ? 'Sync' : 'Local Only'}
         </button>
       </div>
     </>
@@ -428,7 +444,7 @@ export default function App() {
             <button onClick={() => setScreen('tasks')} style={{ ...smallBtn, background: screen === 'tasks' ? theme.focusBg : 'transparent' }}>Tasks</button>
             <button onClick={() => setScreen('stats')} style={{ ...smallBtn, background: screen === 'stats' ? theme.focusBg : 'transparent' }}>Stats</button>
             <button onClick={cycleTheme} style={smallBtn}>Theme</button>
-            <button onClick={() => setIsSettingsOpen(true)} style={smallBtn}>Server</button>
+            <button onClick={() => setIsSettingsOpen(true)} style={smallBtn}>Config</button>
           </div>
         </div>
 
@@ -449,6 +465,10 @@ export default function App() {
         visible={isSettingsOpen}
         serverState={serverState}
         theme={theme}
+        onUseLocal={chooseLocalBackend}
+        onStartNextcloud={startNextcloudSetup}
+        onPollNextcloud={pollNextcloudSetup}
+        onConfigured={() => refreshServerState('Connected to Nextcloud.')}
         onClose={() => setIsSettingsOpen(false)}
       />
     </div>

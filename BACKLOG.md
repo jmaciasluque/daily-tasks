@@ -32,7 +32,7 @@ This file mirrors GitHub issues for agent-friendly scanning. Use issues for disc
 
 ### Web
 - [x] #21 Web app scaffold with local backend (labels: web, ui, backend)
-- [ ] #22 Web: backend selection UI (labels: web, ui, configuration)
+- [x] #22 Web: backend selection UI (labels: web, ui, configuration)
 - [ ] #59 QR-based Nextcloud config transfer across clients (labels: cli, mobile, web, configuration)
 
 ## Docs & tests
