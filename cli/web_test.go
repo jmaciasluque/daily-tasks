@@ -50,6 +50,12 @@ func TestWebServerStateAndSave(t *testing.T) {
 	if initial.DataPath != dataPath {
 		t.Fatalf("expected data path %q, got %q", dataPath, initial.DataPath)
 	}
+	if initial.ConfigPath != server.configPath {
+		t.Fatalf("expected config path %q, got %q", server.configPath, initial.ConfigPath)
+	}
+	if initial.Backend != string(internal.BackendLocal) {
+		t.Fatalf("expected backend %q, got %q", internal.BackendLocal, initial.Backend)
+	}
 
 	payload := internal.Data{
 		LastReset:  "2026-03-27",
@@ -92,6 +98,74 @@ func TestWebServerStateAndSave(t *testing.T) {
 	}
 	if len(loaded.Tasks) != 1 || loaded.Tasks[0].Title != "Ship local web server" {
 		t.Fatalf("expected saved task on disk, got %+v", loaded.Tasks)
+	}
+}
+
+func TestWebServerStateIncludesSafeNextcloudSummary(t *testing.T) {
+	tempDir := t.TempDir()
+	dataPath := tempDir + "/tasks.json"
+	server := testWebServer(dataPath)
+	t.Setenv("DAILY_TASKS_CONFIG", server.configPath)
+	cfg := internal.AppConfig{
+		Backend: internal.BackendNextcloud,
+		Nextcloud: internal.NextcloudConfig{
+			ServerURL:   "https://cloud.example.com",
+			LoginName:   "daily-user",
+			AppPassword: "secret-app-password",
+			RemotePath:  "/remote.php/dav/files/daily-user/.daily-tasks.json",
+		},
+	}
+	if err := internal.SaveAppConfig(server.configPath, cfg); err != nil {
+		t.Fatalf("failed to seed config: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/state", nil)
+	res := httptest.NewRecorder()
+	server.routes().ServeHTTP(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected GET /api/state status 200, got %d", res.Code)
+	}
+	if strings.Contains(res.Body.String(), "secret-app-password") {
+		t.Fatal("state response leaked the Nextcloud app password")
+	}
+
+	var state webStateResponse
+	if err := json.Unmarshal(res.Body.Bytes(), &state); err != nil {
+		t.Fatalf("failed to decode state response: %v", err)
+	}
+	if state.Backend != string(internal.BackendNextcloud) {
+		t.Fatalf("expected backend %q, got %q", internal.BackendNextcloud, state.Backend)
+	}
+	if state.Nextcloud == nil {
+		t.Fatal("expected Nextcloud summary")
+	}
+	if state.Nextcloud.ServerURL != "https://cloud.example.com" || state.Nextcloud.LoginName != "daily-user" {
+		t.Fatalf("unexpected Nextcloud summary: %+v", state.Nextcloud)
+	}
+	if state.Nextcloud.RemotePath != "/remote.php/dav/files/daily-user/.daily-tasks.json" {
+		t.Fatalf("unexpected remote path %q", state.Nextcloud.RemotePath)
+	}
+}
+
+func TestWebServerSetupLocalEndpointSavesBackend(t *testing.T) {
+	tempDir := t.TempDir()
+	server := testWebServer(tempDir + "/tasks.json")
+	t.Setenv("DAILY_TASKS_CONFIG", server.configPath)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/setup/local", nil)
+	res := httptest.NewRecorder()
+	server.routes().ServeHTTP(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected POST /api/setup/local status 200, got %d", res.Code)
+	}
+	cfg, err := internal.LoadAppConfig(server.configPath)
+	if err != nil {
+		t.Fatalf("failed to load saved config: %v", err)
+	}
+	if cfg.Backend != internal.BackendLocal {
+		t.Fatalf("expected local backend, got %q", cfg.Backend)
 	}
 }
 

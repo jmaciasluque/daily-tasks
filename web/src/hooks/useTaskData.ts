@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { Data, ServerState, Task, TaskStatus } from '../types';
 import { emptyData, normalizeData, resetIfNeeded, nextOrder } from '../services/data';
-import { fetchServerState, saveServerData, syncServerData } from '../services/api';
+import { fetchServerState, saveServerData, setupLocalBackend, syncServerData } from '../services/api';
 
 export function useTaskData() {
   const [data, setData] = useState<Data>(emptyData());
@@ -17,9 +17,9 @@ export function useTaskData() {
       setServerState(state);
       setStatusMsg(
         successMessage || (
-          state.sync_configured
+          state.backend === 'nextcloud'
             ? 'Connected to the local Daily Tasks server.'
-            : 'Connected to the local server. Nextcloud sync is not configured.'
+            : 'Using local-only backend.'
         ),
       );
     } catch (err) {
@@ -71,6 +71,11 @@ export function useTaskData() {
     } finally {
       setRefreshing(false);
     }
+  }, [loadState]);
+
+  const chooseLocalBackend = useCallback(async () => {
+    await setupLocalBackend();
+    await loadState('Using local-only backend.');
   }, [loadState]);
 
   const addTask = useCallback((title: string, duration: number, deadline?: string, visibility?: number[]) => {
@@ -129,6 +134,7 @@ export function useTaskData() {
     statusMsg,
     syncing,
     refreshing,
+    refreshServerState: loadState,
     reloadFromDisk,
     syncFromRemote,
     addTask,
@@ -137,5 +143,6 @@ export function useTaskData() {
     toggleTaskStatus,
     skipTask,
     cycleTheme,
+    chooseLocalBackend,
   };
 }

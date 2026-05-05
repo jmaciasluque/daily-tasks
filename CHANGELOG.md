@@ -10,6 +10,20 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 
 ---
 
+## [0.9.0] - 2026-05-05
+
+### Web
+
+#### Added
+- Added backend configuration to the React web app's Config modal. The web UI
+  now shows the selected backend, local data/config paths, safe Nextcloud
+  connection details, and can switch to local-only storage or start and finish
+  the Nextcloud Login Flow through the local CLI server.
+
+#### Changed
+- The web Sync button now reflects local-only installations instead of sending a
+  remote sync request when no Nextcloud backend is active.
+
 ## [0.8.2] - 2026-05-05
 
 ### Docs

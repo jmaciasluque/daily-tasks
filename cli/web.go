@@ -28,13 +28,21 @@ import (
 var embeddedWebUI embed.FS
 
 type webStateResponse struct {
-	Action         string        `json:"action,omitempty"`
-	Data           internal.Data `json:"data"`
-	DataPath       string        `json:"data_path"`
-	Backend        string        `json:"backend,omitempty"`
-	Message        string        `json:"message,omitempty"`
-	SyncConfigured bool          `json:"sync_configured"`
-	Version        string        `json:"version"`
+	Action         string                      `json:"action,omitempty"`
+	Data           internal.Data               `json:"data"`
+	DataPath       string                      `json:"data_path"`
+	ConfigPath     string                      `json:"config_path,omitempty"`
+	Backend        string                      `json:"backend,omitempty"`
+	Nextcloud      *webNextcloudConfigResponse `json:"nextcloud,omitempty"`
+	Message        string                      `json:"message,omitempty"`
+	SyncConfigured bool                        `json:"sync_configured"`
+	Version        string                      `json:"version"`
+}
+
+type webNextcloudConfigResponse struct {
+	ServerURL  string `json:"server_url"`
+	LoginName  string `json:"login_name"`
+	RemotePath string `json:"remote_path"`
 }
 
 type webStatsResponse struct {
@@ -472,14 +480,28 @@ func (s *webServer) saveDataLocked(data internal.Data) (webStateResponse, error)
 
 func (s *webServer) stateResponse(data internal.Data, message, action string) webStateResponse {
 	backend := ""
-	if cfg, _, err := internal.LoadEffectiveAppConfig(); err == nil {
+	configPath := s.configPath
+	var nextcloud *webNextcloudConfigResponse
+	if cfg, path, err := internal.LoadEffectiveAppConfig(); err == nil {
+		if path != "" {
+			configPath = path
+		}
 		backend = string(cfg.Backend)
+		if cfg.Backend == internal.BackendNextcloud {
+			nextcloud = &webNextcloudConfigResponse{
+				ServerURL:  cfg.Nextcloud.ServerURL,
+				LoginName:  cfg.Nextcloud.LoginName,
+				RemotePath: cfg.Nextcloud.RemotePath,
+			}
+		}
 	}
 	return webStateResponse{
 		Action:         action,
 		Data:           internal.NormalizeData(data),
 		DataPath:       s.dataPath,
+		ConfigPath:     configPath,
 		Backend:        backend,
+		Nextcloud:      nextcloud,
 		Message:        message,
 		SyncConfigured: internal.HasBackendConfig(),
 		Version:        internal.Version,

@@ -18,15 +18,35 @@ export type Data = {
   last_modified?: number;
 };
 
+export type BackendType = 'local' | 'nextcloud';
+
+export type ServerNextcloudConfig = {
+  server_url: string;
+  login_name: string;
+  remote_path: string;
+};
+
 export type ServerAction = 'loaded' | 'saved' | 'pulled' | 'pushed' | 'error' | 'in_sync';
 
 export type ServerState = {
   action?: ServerAction;
   data: Data;
   data_path: string;
+  config_path?: string;
+  backend?: BackendType;
+  nextcloud?: ServerNextcloudConfig;
   message?: string;
   sync_configured: boolean;
   version: string;
+};
+
+export type NextcloudSetupStart = {
+  session_id: string;
+  login_url: string;
+};
+
+export type NextcloudSetupPoll = {
+  status: 'pending' | 'connected';
 };
 
 export type DailyStats = {
