@@ -10,11 +10,20 @@ type Props = {
   busy: boolean;
   loginPending: boolean;
   theme: Theme;
+  statusMsg: string;
+  appVersion: string;
+  appVariant: string;
+  appVersionSuffix: string;
+  commitHash: string;
+  updateId: string;
+  updateChannel: string;
+  updateReady: boolean;
   onChangeServerUrl: (value: string) => void;
   onUseLocal: () => void;
   onStartNextcloud: () => void;
   onOpenNextcloud: () => void;
   onFinishNextcloud: () => void;
+  onRestartForUpdate: () => void;
   onClose: () => void;
 };
 
@@ -25,21 +34,32 @@ export function SettingsModal({
   busy,
   loginPending,
   theme,
+  statusMsg,
+  appVersion,
+  appVariant,
+  appVersionSuffix,
+  commitHash,
+  updateId,
+  updateChannel,
+  updateReady,
   onChangeServerUrl,
   onUseLocal,
   onStartNextcloud,
   onOpenNextcloud,
   onFinishNextcloud,
+  onRestartForUpdate,
   onClose,
 }: Props) {
   const nextcloudConfig = config.backend === 'nextcloud' ? config.nextcloud : undefined;
+  const versionLabel = `${appVersion}${appVariant !== 'production' && appVersionSuffix ? `-${appVersionSuffix.slice(0, 7)}` : ''}`;
 
   return (
     <Modal visible={visible} animationType="slide" transparent>
       <View style={styles.overlay}>
         <View style={[styles.card, { backgroundColor: theme.panelBg, borderColor: theme.border }]}>
-          <Text style={[styles.title, { color: theme.text }]}>Storage Backend</Text>
+          <Text style={[styles.title, { color: theme.text }]}>Config</Text>
           <ScrollView contentContainerStyle={{ gap: 12 }}>
+            <Text style={[styles.sectionLabel, { color: theme.muted }]}>Storage Backend</Text>
             <Text style={[styles.copy, { color: theme.muted }]}>
               {config.backend === 'local'
                 ? 'This installation is currently using local-only storage.'
@@ -95,6 +115,35 @@ export function SettingsModal({
                 </Pressable>
               </View>
             )}
+
+            <View style={[styles.divider, { borderTopColor: theme.border }]} />
+
+            <Text style={[styles.sectionLabel, { color: theme.muted }]}>Status</Text>
+            <Text style={[styles.status, { color: theme.muted }]}>
+              Backend: {config.backend === 'nextcloud' ? 'Nextcloud' : 'Local only'}
+            </Text>
+            {statusMsg ? <Text style={[styles.status, { color: theme.muted }]}>{statusMsg}</Text> : null}
+
+            <Text style={[styles.sectionLabel, { color: theme.muted }]}>Build</Text>
+            <Text style={[styles.status, { color: theme.muted }]}>Version {versionLabel}</Text>
+            {commitHash ? (
+              <Text style={[styles.status, { color: theme.muted }]}>Commit {commitHash.slice(0, 7)}</Text>
+            ) : null}
+            <Text style={[styles.status, { color: theme.muted }]}>Update {updateId} · {updateChannel}</Text>
+            {appVariant !== 'production' ? (
+              <Text style={[styles.status, { color: theme.muted }]}>Test build</Text>
+            ) : null}
+            {updateReady ? (
+              <View style={styles.updateBanner}>
+                <Text style={[styles.status, { color: theme.muted }]}>Update available</Text>
+                <Pressable
+                  onPress={onRestartForUpdate}
+                  style={[styles.secondaryButton, { borderColor: theme.border }]}
+                >
+                  <Text style={{ color: theme.text }}>Restart</Text>
+                </Pressable>
+              </View>
+            ) : null}
           </ScrollView>
           <View style={styles.actions}>
             <Pressable onPress={onUseLocal} style={[styles.secondaryButton, { borderColor: theme.border }]}>
@@ -122,10 +171,17 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 18,
     gap: 12,
+    maxHeight: '90%',
   },
   title: {
     fontSize: 18,
     fontWeight: '700',
+  },
+  sectionLabel: {
+    fontSize: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginTop: 4,
   },
   copy: {
     lineHeight: 20,
@@ -149,6 +205,21 @@ const styles = StyleSheet.create({
   },
   pendingActions: {
     gap: 12,
+  },
+  divider: {
+    borderTopWidth: 1,
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  status: {
+    fontSize: 13,
+  },
+  updateBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginTop: 4,
   },
   actions: {
     flexDirection: 'row',

@@ -21,7 +21,7 @@ import { StatsScreen, TaskRow, TaskEditor, SettingsModal } from './src/component
 import { useTaskData } from './src/hooks/useTaskData';
 import { orderedTasks } from './src/services/data';
 import { buildStatsSummary } from './src/services/history';
-import { setupNotifications, handleNotificationAction, scheduleTestNotification } from './src/services/notifications';
+import { setupNotifications, handleNotificationAction } from './src/services/notifications';
 import { pollNextcloudLogin, startNextcloudLogin, type LoginFlowSession } from './src/services/backend_webdav';
 import { getTheme, isLightColor } from './src/theme/themes';
 import type { Task, TaskStatus } from './src/types';
@@ -250,30 +250,6 @@ export default function App() {
     ]);
   };
 
-  const handleTestNotification = async () => {
-    const task = orderedTasks(data, 'todo')[0];
-    if (!task) {
-      Alert.alert('No todo task', 'Add or reopen a todo task first.');
-      return;
-    }
-
-    const granted = await setupNotifications();
-    if (!granted) {
-      Alert.alert('Notifications disabled', 'Allow notifications for Daily Tasks first.');
-      return;
-    }
-
-    try {
-      await scheduleTestNotification(task);
-      Alert.alert(
-        'Test notification scheduled',
-        `A test notification for "${task.title}" will appear in a few seconds.`,
-      );
-    } catch (err) {
-      Alert.alert('Notification error', (err as Error).message);
-    }
-  };
-
   const openSettings = () => {
     setServerUrlInput(settings.baseUrl);
     setIsSettingsOpen(true);
@@ -365,7 +341,7 @@ export default function App() {
                     <Text style={{ color: theme.text }}>Theme</Text>
                   </Pressable>
                   <Pressable onPress={openSettings} style={[styles.smallButton, { borderColor: theme.border }]}>
-                    <Text style={{ color: theme.text }}>Backend</Text>
+                    <Text style={{ color: theme.text }}>Config</Text>
                   </Pressable>
                 </View>
               </View>
@@ -451,9 +427,6 @@ export default function App() {
                     <Pressable onPress={openAdd} style={[styles.primaryButton, styles.footerButton, { backgroundColor: theme.accent }]}>
                       <Text style={styles.primaryButtonText}>Add Task</Text>
                     </Pressable>
-                    <Pressable onPress={handleTestNotification} style={[styles.secondaryButton, styles.footerButton, { borderColor: theme.border }]}>
-                      <Text style={{ color: theme.text }}>Test Notif</Text>
-                    </Pressable>
                     {nextcloudConfigured ? (
                       <Pressable onPress={() => syncFromRemote()} style={[styles.secondaryButton, styles.footerButton, { borderColor: theme.border }]}>
                         <Text style={{ color: theme.text }}>{syncing ? 'Syncing...' : 'Sync'}</Text>
@@ -474,32 +447,6 @@ export default function App() {
                 />
               )}
 
-              <Text style={[styles.status, { color: theme.muted }]}>
-                Backend: {config.backend === 'nextcloud' ? 'Nextcloud' : 'Local only'}
-              </Text>
-              {statusMsg ? <Text style={[styles.status, { color: theme.muted }]}>{statusMsg}</Text> : null}
-              <Text style={[styles.status, { color: theme.muted }]}>
-                Version {appVersion}{appVariant !== 'production' && appVersionSuffix ? `-${appVersionSuffix.slice(0, 7)}` : ''}
-              </Text>
-              {commitHash ? (
-                <Text style={[styles.status, { color: theme.muted }]}>Commit {commitHash.slice(0, 7)}</Text>
-              ) : null}
-              <Text style={[styles.status, { color: theme.muted }]}>Update {updateId} · {updateChannel}</Text>
-              {appVariant !== 'production' ? (
-                <Text style={[styles.status, { color: theme.muted }]}>Test build</Text>
-              ) : null}
-              {updateReady ? (
-                <View style={styles.updateBanner}>
-                  <Text style={[styles.status, { color: theme.muted }]}>Update available</Text>
-                  <Pressable
-                    onPress={() => Updates.reloadAsync()}
-                    style={[styles.smallButton, { borderColor: theme.border }]}
-                  >
-                    <Text style={{ color: theme.text }}>Restart</Text>
-                  </Pressable>
-                </View>
-              ) : null}
-
               <TaskEditor
                 visible={isEditorOpen}
                 task={editingTask}
@@ -515,11 +462,20 @@ export default function App() {
                 busy={backendBusy}
                 loginPending={!!loginSession}
                 theme={theme}
+                statusMsg={statusMsg}
+                appVersion={appVersion}
+                appVariant={appVariant}
+                appVersionSuffix={appVersionSuffix}
+                commitHash={commitHash}
+                updateId={updateId}
+                updateChannel={updateChannel}
+                updateReady={updateReady}
                 onChangeServerUrl={setServerUrlInput}
                 onUseLocal={handleChooseLocalBackend}
                 onStartNextcloud={handleStartNextcloudLogin}
                 onOpenNextcloud={handleOpenPendingLogin}
                 onFinishNextcloud={handleFinishNextcloudLogin}
+                onRestartForUpdate={() => Updates.reloadAsync()}
                 onClose={() => setIsSettingsOpen(false)}
               />
             </>
@@ -648,16 +604,5 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingHorizontal: 10,
     paddingVertical: 6,
-  },
-  status: {
-    textAlign: 'center',
-    paddingBottom: 12,
-  },
-  updateBanner: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 8,
-    paddingBottom: 12,
   },
 });
