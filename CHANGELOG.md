@@ -10,6 +10,16 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 
 ---
 
+## [0.8.2] - 2026-05-05
+
+### Docs
+
+#### Changed
+- Cleaned up `BACKLOG.md` so already-shipped backend abstraction, task schema,
+  history, visibility, CLI deadline grouping, web scaffold, sync semantics, and
+  test coverage work is marked complete. Kept unresolved follow-up work open and
+  narrowed stale umbrella titles to the remaining scope.
+
 ## [0.8.1] - 2026-05-05
 
 ### Mobile
