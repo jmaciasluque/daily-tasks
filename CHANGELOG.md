@@ -10,6 +10,15 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 
 ---
 
+## [0.9.1] - 2026-05-06
+
+### All platforms
+
+#### Fixed
+- Daily reset now only moves tasks visible today back to `todo`. Tasks hidden by
+  weekday visibility keep their current status and order until a day when they
+  are visible, preventing off-day tasks from creating misleading reset history.
+
 ## [0.9.0] - 2026-05-05
 
 ### Web

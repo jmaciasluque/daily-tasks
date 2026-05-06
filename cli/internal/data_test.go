@@ -382,6 +382,34 @@ func TestResetIfNewDay(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("new day resets only tasks visible today", func(t *testing.T) {
+		today := int(time.Now().Weekday())
+		hiddenDay := (today + 1) % 7
+		data := Data{
+			LastReset: "2020-01-01",
+			Tasks: []Task{
+				{ID: 1, Status: "done", Order: 3},
+				{ID: 2, Status: "skipped", Order: 1, Visibility: []int{today}},
+				{ID: 3, Status: "done", Order: 2, Visibility: []int{hiddenDay}},
+			},
+		}
+
+		changed := ResetIfNewDay(&data)
+		if !changed {
+			t.Error("should have changed on new day")
+		}
+
+		if data.Tasks[0].Status != "todo" || data.Tasks[0].Order != 1 {
+			t.Errorf("daily task should reset to todo order 1, got status=%s order=%d", data.Tasks[0].Status, data.Tasks[0].Order)
+		}
+		if data.Tasks[1].Status != "todo" || data.Tasks[1].Order != 2 {
+			t.Errorf("visible task should reset to todo order 2, got status=%s order=%d", data.Tasks[1].Status, data.Tasks[1].Order)
+		}
+		if data.Tasks[2].Status != "done" || data.Tasks[2].Order != 2 {
+			t.Errorf("hidden task should keep status/order, got status=%s order=%d", data.Tasks[2].Status, data.Tasks[2].Order)
+		}
+	})
 }
 
 func TestIsAM(t *testing.T) {

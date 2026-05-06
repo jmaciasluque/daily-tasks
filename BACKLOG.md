@@ -17,7 +17,7 @@ This file mirrors GitHub issues for agent-friendly scanning. Use issues for disc
 
 ## Behavior
 - [x] #14 Implement visibility filters by day (labels: backend, ui)
-- [ ] #15 Daily reset respects visibility rules (labels: dml, backend)
+- [x] #15 Daily reset respects visibility rules (labels: dml, backend)
 - [x] #66 Add task history and stats across CLI, web, and mobile (labels: backend, cli, mobile, web, ui, testing)
 
 ## Clients

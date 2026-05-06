@@ -102,20 +102,22 @@ export function resetIfNeeded(data: Data): Data {
   if (data.last_reset === today) {
     return data;
   }
-  // Reset todo, done, and skipped — all go back to todo
-  const merged = [
+  const todayWeekday = new Date().getDay();
+  const resettable = [
     ...allOrderedTasks(data, 'todo'),
     ...allOrderedTasks(data, 'done'),
     ...allOrderedTasks(data, 'skipped'),
-  ];
-  merged.forEach((task, idx) => {
+  ].filter((task) =>
+    !task.visibility || task.visibility.length === 0 || task.visibility.includes(todayWeekday)
+  );
+  resettable.forEach((task, idx) => {
     task.status = 'todo';
     task.order = idx + 1;
   });
   return {
     ...data,
     last_reset: today,
-    tasks: merged,
+    tasks: data.tasks,
     last_modified: Date.now(),
   };
 }
