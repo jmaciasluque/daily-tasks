@@ -430,19 +430,21 @@ describe('orderedTasks visibility filtering', () => {
 
 describe('resetIfNeeded preserves visibility', () => {
   it('keeps visibility field after reset', () => {
+    const today = new Date().getDay();
     const data: Data = {
       last_reset: '2020-01-01',
       next_id: 2,
-      tasks: [{ id: 1, title: 'MWF', duration: 30, status: 'done', order: 1, visibility: [1, 3, 5] }],
+      tasks: [{ id: 1, title: 'Today', duration: 30, status: 'done', order: 1, visibility: [today] }],
       theme_index: 0,
     };
 
     const result = resetIfNeeded(data);
-    expect(result.tasks[0].visibility).toEqual([1, 3, 5]);
+    expect(result.tasks[0].visibility).toEqual([today]);
     expect(result.tasks[0].status).toBe('todo');
   });
 
-  it('resets ALL tasks including those not visible today', () => {
+  it('leaves tasks hidden today unchanged', () => {
+    const today = new Date().getDay();
     const otherDay = (new Date().getDay() + 1) % 7;
     const data: Data = {
       last_reset: '2020-01-01',
@@ -456,9 +458,11 @@ describe('resetIfNeeded preserves visibility', () => {
 
     const result = resetIfNeeded(data);
     expect(result.tasks).toHaveLength(2);
-    result.tasks.forEach(task => {
-      expect(task.status).toBe('todo');
-    });
+    expect(result.tasks[0].status).toBe('todo');
+    expect(result.tasks[0].visibility).toBeUndefined();
+    expect(result.tasks[1].status).toBe('done');
+    expect(result.tasks[1].visibility).toEqual([otherDay]);
+    expect(today).not.toBe(otherDay);
   });
 });
 

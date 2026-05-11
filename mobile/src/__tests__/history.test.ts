@@ -62,6 +62,37 @@ describe('applyDailyResetWithHistory', () => {
 
     jest.useRealTimers();
   });
+
+  it('does not reset or record events for tasks hidden today', () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-04-08T09:00:00Z'));
+
+    const data: Data = {
+      last_reset: '2026-04-07',
+      next_id: 3,
+      tasks: [
+        { id: 1, title: 'Daily', duration: 30, status: 'done', order: 1 },
+        { id: 2, title: 'Monday only', duration: 20, status: 'done', order: 2, visibility: [1] },
+      ],
+      theme_index: 0,
+    };
+
+    const { data: resetData, history, changed } = applyDailyResetWithHistory(data, emptyHistory(), new Date('2026-04-08T09:00:00Z').getTime());
+
+    expect(changed).toBe(true);
+    expect(resetData.tasks[0].status).toBe('todo');
+    expect(resetData.tasks[1].status).toBe('done');
+    expect(history.days[1].date).toBe('2026-04-08');
+    expect(history.days[1].tasks.map((task) => task.id)).toEqual([1]);
+    expect(history.events).toHaveLength(1);
+    expect(history.events[0]).toMatchObject({
+      type: 'status_changed',
+      task_id: 1,
+      from_status: 'done',
+      to_status: 'todo',
+    });
+
+    jest.useRealTimers();
+  });
 });
 
 describe('aggregateStats', () => {

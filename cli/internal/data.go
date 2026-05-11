@@ -219,20 +219,26 @@ func ParseDuration(s string) (int, error) {
 
 // ResetIfNewDay checks if we need to reset tasks for a new day
 func ResetIfNewDay(data *Data) bool {
-	today := time.Now().Format("2006-01-02")
+	now := time.Now()
+	today := now.Format("2006-01-02")
 	if data.LastReset == today {
 		return false
 	}
 
-	// Move all tasks (todo, done, and skipped) back to todo
-	reset := append(OrderedTasks(data, "todo"), OrderedTasks(data, "done")...)
-	reset = append(reset, OrderedTasks(data, "skipped")...)
+	var reset []*Task
+	for _, status := range []string{"todo", "done", "skipped"} {
+		for _, task := range OrderedTasks(data, status) {
+			if task.IsVisibleOn(now.Weekday()) {
+				reset = append(reset, task)
+			}
+		}
+	}
 	for i, t := range reset {
 		t.Status = "todo"
 		t.Order = i + 1
 	}
 	data.LastReset = today
-	data.LastModified = time.Now().UnixMilli()
+	data.LastModified = now.UnixMilli()
 	return true
 }
 

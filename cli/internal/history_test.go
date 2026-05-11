@@ -242,3 +242,50 @@ func TestStatsWithVisibility(t *testing.T) {
 
 	_ = time.Wednesday // ensure time import is used
 }
+
+func TestDailyResetHistoryIgnoresHiddenTasks(t *testing.T) {
+	path := t.TempDir() + "/tasks.json"
+	today := time.Now().Format("2006-01-02")
+	todayWeekday := int(time.Now().Weekday())
+	hiddenDay := (todayWeekday + 1) % 7
+	before := Data{
+		LastReset: "2020-01-01",
+		Tasks: []Task{
+			{ID: 1, Title: "Visible", Duration: 10, Status: "done", Order: 1},
+			{ID: 2, Title: "Hidden", Duration: 20, Status: "done", Order: 2, Visibility: []int{hiddenDay}},
+		},
+	}
+	after := CloneData(before)
+	if !ResetIfNewDay(&after) {
+		t.Fatal("expected reset")
+	}
+	if err := SaveDataWithHistory(path, before, after); err != nil {
+		t.Fatalf("failed to save data with history: %v", err)
+	}
+
+	history, err := LoadHistory(path)
+	if err != nil {
+		t.Fatalf("failed to load history: %v", err)
+	}
+	var todaySnapshot *HistoryDay
+	for i := range history.Days {
+		if history.Days[i].Date == today {
+			todaySnapshot = &history.Days[i]
+			break
+		}
+	}
+	if todaySnapshot == nil {
+		t.Fatalf("expected history snapshot for %s, got %+v", today, history.Days)
+	}
+	if len(todaySnapshot.Tasks) != 1 || todaySnapshot.Tasks[0].ID != 1 || todaySnapshot.Tasks[0].Status != "todo" {
+		t.Fatalf("expected only visible task reset in today's snapshot, got %+v", todaySnapshot.Tasks)
+	}
+
+	if len(history.Events) != 1 {
+		t.Fatalf("expected one reset status event, got %+v", history.Events)
+	}
+	event := history.Events[0]
+	if event.TaskID != 1 || event.Type != "status_changed" || event.FromStatus != "done" || event.ToStatus != "todo" {
+		t.Fatalf("unexpected reset event: %+v", event)
+	}
+}
