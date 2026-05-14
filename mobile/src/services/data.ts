@@ -71,6 +71,19 @@ export function isVisibleToday(task: Task): boolean {
   return task.visibility.includes(new Date().getDay());
 }
 
+export function orderedAllTasks(data: Data): Task[] {
+  const statusRank: Record<TaskStatus, number> = { todo: 0, done: 1, skipped: 2 };
+  return [...data.tasks].sort((a, b) => {
+    if (a.status !== b.status) return statusRank[a.status] - statusRank[b.status];
+    if (a.status === 'todo') {
+      if (a.deadline && b.deadline) return a.deadline.localeCompare(b.deadline);
+      if (a.deadline) return -1;
+      if (b.deadline) return 1;
+    }
+    return a.order === b.order ? a.id - b.id : a.order - b.order;
+  });
+}
+
 export function orderedTasks(data: Data, status: TaskStatus): Task[] {
   return data.tasks
     .filter((task) => task.status === status && isVisibleToday(task))

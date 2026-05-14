@@ -36,10 +36,12 @@ const (
 var statsPeriods = []string{"7d", "30d", "90d", "365d"}
 
 type taskItem struct {
-	id       int
-	title    string
-	duration int
-	deadline string
+	id          int
+	title       string
+	duration    int
+	deadline    string
+	hiddenToday bool
+	visibility  []int
 }
 
 func (t taskItem) Title() string {
@@ -51,6 +53,9 @@ func (t taskItem) Title() string {
 		} else {
 			s += fmt.Sprintf(" • ⏰ %s", t.deadline)
 		}
+	}
+	if t.hiddenToday {
+		s += fmt.Sprintf(" • hidden today (%s)", formatVisibility(t.visibility))
 	}
 	return s
 }
@@ -112,26 +117,27 @@ func formatVisibility(days []int) string {
 }
 
 type model struct {
-	data          internal.Data
-	dataPath      string
-	lists         [3]list.Model
-	focused       int
-	width         int
-	height        int
-	mode          mode
+	data            internal.Data
+	dataPath        string
+	lists           [3]list.Model
+	focused         int
+	width           int
+	height          int
+	mode            mode
 	titleInput      textinput.Model
 	durInput        textinput.Model
 	deadlineInput   textinput.Model
 	visibilityInput textinput.Model
-	editID        int
-	errMsg        string
-	statusMsg     string
-	lastChecked   string
-	history       []internal.Data
-	screen        screen
-	statsPeriod   int
-	statsSummary  internal.StatsSummary
-	statsErr      string
+	editID          int
+	errMsg          string
+	statusMsg       string
+	lastChecked     string
+	history         []internal.Data
+	screen          screen
+	statsPeriod     int
+	statsSummary    internal.StatsSummary
+	statsErr        string
+	showAllTasks    bool
 }
 
 func main() {
@@ -210,8 +216,8 @@ func newModel(data internal.Data, path string) model {
 		durInput:        dur,
 		deadlineInput:   deadline,
 		visibilityInput: visibility,
-		width:         80,
-		height:        24,
+		width:           80,
+		height:          24,
 	}
 	m.ensureReset()
 	m.refreshStats()
@@ -317,6 +323,18 @@ func (m model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.screen = screenTasks
 		}
 		return m, nil
+	case "v":
+		if m.screen != screenTasks {
+			return m, nil
+		}
+		m.showAllTasks = !m.showAllTasks
+		if m.showAllTasks {
+			m.statusMsg = "Showing all tasks; hidden tasks can be edited or deleted."
+		} else {
+			m.statusMsg = "Showing tasks visible today."
+		}
+		m.syncLists()
+		return m, nil
 	case "[":
 		if m.screen == screenStats {
 			m.cycleStatsPeriod(-1)
@@ -412,6 +430,10 @@ func (m model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if t == nil || t.Status != "todo" {
 			return m, nil
 		}
+		if m.selectedTaskHiddenToday() {
+			m.statusMsg = "Hidden tasks can be edited or deleted from All view."
+			return m, nil
+		}
 		m.pushHistory()
 		before := internal.CloneData(m.data)
 		t.Status = "skipped"
@@ -426,6 +448,10 @@ func (m model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		t := m.selectedTask()
 		if t == nil {
+			return m, nil
+		}
+		if m.selectedTaskHiddenToday() {
+			m.statusMsg = "Hidden tasks can be edited or deleted from All view."
 			return m, nil
 		}
 		m.pushHistory()
@@ -446,6 +472,10 @@ func (m model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.screen != screenTasks {
 			return m, nil
 		}
+		if m.selectedTaskHiddenToday() {
+			m.statusMsg = "Hidden tasks can be edited or deleted from All view."
+			return m, nil
+		}
 		m.pushHistory()
 		before := internal.CloneData(m.data)
 		if ok, taskIdx := m.moveTask(1); ok {
@@ -457,6 +487,10 @@ func (m model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "K":
 		if m.screen != screenTasks {
+			return m, nil
+		}
+		if m.selectedTaskHiddenToday() {
+			m.statusMsg = "Hidden tasks can be edited or deleted from All view."
 			return m, nil
 		}
 		m.pushHistory()
@@ -472,6 +506,10 @@ func (m model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.screen != screenTasks {
 			return m, nil
 		}
+		if m.selectedTaskHiddenToday() {
+			m.statusMsg = "Hidden tasks can be edited or deleted from All view."
+			return m, nil
+		}
 		m.pushHistory()
 		before := internal.CloneData(m.data)
 		oldIdx := m.lists[m.focused].Index()
@@ -484,6 +522,10 @@ func (m model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "L":
 		if m.screen != screenTasks {
+			return m, nil
+		}
+		if m.selectedTaskHiddenToday() {
+			m.statusMsg = "Hidden tasks can be edited or deleted from All view."
 			return m, nil
 		}
 		m.pushHistory()
@@ -755,7 +797,11 @@ func (m model) renderFooter() string {
 		return ""
 	}
 	theme := m.currentTheme()
-	help := fmt.Sprintf("g:stats  [:prev  ]:next  a:add  e:edit  d:delete  s:skip  space:toggle  J/K:reorder  H/L:move  R:reload  r:sync  p:push  t:theme (%s)  tab:switch  q:quit", theme.Name)
+	scope := "today"
+	if m.showAllTasks {
+		scope = "all"
+	}
+	help := fmt.Sprintf("g:stats  v:view(%s)  [:prev  ]:next  a:add  e:edit  d:delete  s:skip  space:toggle  J/K:reorder  H/L:move  R:reload  r:sync  p:push  t:theme (%s)  tab:switch  q:quit", scope, theme.Name)
 	if m.screen == screenStats {
 		help = fmt.Sprintf("g:tasks  [:prev  ]:next  h/l:range  t:theme (%s)  R:reload  r:sync  p:push  q:quit", theme.Name)
 	}
@@ -846,10 +892,8 @@ func (m *model) syncLists() {
 	today := time.Now().Weekday()
 	var todoItems, doneItems, skippedItems []list.Item
 	prevGroup := ""
-	for _, t := range internal.OrderedTasks(&m.data, "todo") {
-		if !t.IsVisibleOn(today) {
-			continue
-		}
+	for _, t := range m.orderedTasksForView("todo") {
+		hiddenToday := !t.IsVisibleOn(today)
 		if t.Deadline != "" {
 			group := "AM"
 			if !internal.IsAM(t.Deadline) {
@@ -860,23 +904,30 @@ func (m *model) syncLists() {
 				prevGroup = group
 			}
 		}
-		todoItems = append(todoItems, taskItem{id: t.ID, title: t.Title, duration: t.Duration, deadline: t.Deadline})
+		todoItems = append(todoItems, taskItem{id: t.ID, title: t.Title, duration: t.Duration, deadline: t.Deadline, hiddenToday: hiddenToday, visibility: t.Visibility})
 	}
-	for _, t := range internal.OrderedTasks(&m.data, "done") {
-		if !t.IsVisibleOn(today) {
-			continue
-		}
-		doneItems = append(doneItems, taskItem{id: t.ID, title: t.Title, duration: t.Duration, deadline: t.Deadline})
+	for _, t := range m.orderedTasksForView("done") {
+		hiddenToday := !t.IsVisibleOn(today)
+		doneItems = append(doneItems, taskItem{id: t.ID, title: t.Title, duration: t.Duration, deadline: t.Deadline, hiddenToday: hiddenToday, visibility: t.Visibility})
 	}
-	for _, t := range internal.OrderedTasks(&m.data, "skipped") {
-		if !t.IsVisibleOn(today) {
-			continue
-		}
-		skippedItems = append(skippedItems, taskItem{id: t.ID, title: t.Title, duration: t.Duration, deadline: t.Deadline})
+	for _, t := range m.orderedTasksForView("skipped") {
+		hiddenToday := !t.IsVisibleOn(today)
+		skippedItems = append(skippedItems, taskItem{id: t.ID, title: t.Title, duration: t.Duration, deadline: t.Deadline, hiddenToday: hiddenToday, visibility: t.Visibility})
 	}
 	m.lists[0].SetItems(todoItems)
 	m.lists[1].SetItems(doneItems)
 	m.lists[2].SetItems(skippedItems)
+}
+
+func (m *model) orderedTasksForView(status string) []*internal.Task {
+	today := time.Now().Weekday()
+	var tasks []*internal.Task
+	for _, task := range internal.OrderedTasks(&m.data, status) {
+		if m.showAllTasks || task.IsVisibleOn(today) {
+			tasks = append(tasks, task)
+		}
+	}
+	return tasks
 }
 
 func (m model) renderTasksView() string {
@@ -1034,6 +1085,14 @@ func (m *model) selectedTask() *internal.Task {
 		return nil
 	}
 	return internal.FindTask(&m.data, item.id)
+}
+
+func (m *model) selectedTaskHiddenToday() bool {
+	if !m.showAllTasks {
+		return false
+	}
+	t := m.selectedTask()
+	return t != nil && !t.IsVisibleToday()
 }
 
 func (m *model) ensureReset() {
@@ -1250,7 +1309,7 @@ func taskIndexToListIndex(items []list.Item, taskIdx int) int {
 
 func (m *model) moveTask(delta int) (bool, int) {
 	status := colStatus[m.focused]
-	ordered := internal.OrderedTasks(&m.data, status)
+	ordered := m.orderedTasksForView(status)
 	if len(ordered) == 0 {
 		return false, 0
 	}
