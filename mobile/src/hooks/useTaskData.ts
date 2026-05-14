@@ -14,8 +14,15 @@ import {
 } from '../services/storage';
 import { isSettingsComplete, WebDAVBackend } from '../services/backend_webdav';
 import { syncWithRemoteState } from '../services/sync';
+import type { Backend } from '../services/backend';
+import { SingleFlightQueue } from '../services/singleFlightQueue';
 import { rescheduleAllNotifications } from '../services/notifications';
 import { appVariant } from '../config/env';
+
+type RemoteSyncRequest = {
+  backend: Backend;
+  showSyncing: boolean;
+};
 
 export function useTaskData() {
   const [data, setData] = useState<Data>(emptyData());
@@ -26,6 +33,7 @@ export function useTaskData() {
   const [initialized, setInitialized] = useState(false);
   const dataRef = useRef(data);
   const historyRef = useRef(history);
+  const remoteSyncQueueRef = useRef(new SingleFlightQueue<RemoteSyncRequest>());
 
   const settings = useMemo(() => nextcloudSettingsFromConfig(config), [config]);
   const backend = useMemo(() => backendFromConfig(config), [config]);
@@ -68,6 +76,51 @@ export function useTaskData() {
     }
   }, [data, history, initialized]);
 
+  const performQueuedSync = useCallback(async ({ backend: activeBackend }: RemoteSyncRequest) => {
+    try {
+      const latestLocal = dataRef.current;
+      const latestHistory = historyRef.current;
+      const localReset = applyDailyResetWithHistory(latestLocal, latestHistory);
+      const localLastModified = normalizeData(localReset.data).last_modified || 0;
+      const result = await syncWithRemoteState(activeBackend, localReset.data, localReset.history);
+      const currentLastModified = normalizeData(dataRef.current).last_modified || 0;
+      if (currentLastModified > localLastModified) {
+        setStatusMsg(`${result.message}; latest local change queued for sync.`);
+        return;
+      }
+      if (result.action !== 'error') {
+        const synced = normalizeData(result.data);
+        const syncedReset = applyDailyResetWithHistory(synced, result.history, Date.now());
+        if (result.action !== 'deferred') {
+          dataRef.current = syncedReset.data;
+          historyRef.current = syncedReset.history;
+          setHistory(syncedReset.history);
+          setData(syncedReset.data);
+        }
+      }
+      setStatusMsg(result.message);
+    } catch (err) {
+      setStatusMsg(`Sync error: ${(err as Error).message}`);
+    }
+  }, []);
+
+  const queueRemoteSync = useCallback((request: RemoteSyncRequest) => {
+    if (request.showSyncing) {
+      setSyncing(true);
+    }
+
+    const queued = remoteSyncQueueRef.current.enqueue(
+      request,
+      performQueuedSync,
+      (previous, next) => ({
+        backend: next.backend,
+        showSyncing: (previous?.showSyncing ?? false) || next.showSyncing,
+      }),
+    );
+    queued.finally(() => setSyncing(false));
+    return queued;
+  }, [performQueuedSync]);
+
   const syncFromRemote = useCallback(async (overrideSettings?: Settings) => {
     // Setup-screen path passes freshly-obtained settings before they're
     // persisted; everywhere else we use the memoized backend from config.
@@ -77,27 +130,8 @@ export function useTaskData() {
       return;
     }
 
-    setSyncing(true);
-    try {
-      const latestLocal = await loadCachedData();
-      const latestHistory = await loadCachedHistory();
-      const localReset = applyDailyResetWithHistory(latestLocal, latestHistory);
-      const result = await syncWithRemoteState(activeBackend, localReset.data, localReset.history);
-      if (result.action !== 'error') {
-        const synced = normalizeData(result.data);
-        const syncedReset = applyDailyResetWithHistory(synced, result.history, Date.now());
-        dataRef.current = syncedReset.data;
-        historyRef.current = syncedReset.history;
-        setHistory(syncedReset.history);
-        setData(syncedReset.data);
-      }
-      setStatusMsg(result.message);
-    } catch (err) {
-      setStatusMsg(`Sync error: ${(err as Error).message}`);
-    } finally {
-      setSyncing(false);
-    }
-  }, [backend, config.backend]);
+    await queueRemoteSync({ backend: activeBackend, showSyncing: true });
+  }, [backend, config.backend, queueRemoteSync]);
 
   useEffect(() => {
     if (initialized && nextcloudConfigured) {
@@ -105,30 +139,16 @@ export function useTaskData() {
     }
   }, [initialized, nextcloudConfigured, syncFromRemote]);
 
-  const pushToRemote = useCallback(async (dataToSave: Data, historyToSave: History) => {
+  const pushToRemote = useCallback(async () => {
     if (!backend) {
       return;
     }
 
-    try {
-      // Auto-save goes through the etag-aware sync flow rather than a blind
-      // PUT so concurrent writers (other clients, the Nextcloud desktop
-      // client) can't be silently clobbered. Local edits have a fresh
-      // last_modified, so this nearly always pushes; in the rare race where
-      // a remote write lands first, the result reconciles instead.
-      const result = await syncWithRemoteState(backend, dataToSave, historyToSave);
-      if (result.action === 'pulled') {
-        const synced = normalizeData(result.data);
-        dataRef.current = synced;
-        historyRef.current = result.history;
-        setData(synced);
-        setHistory(result.history);
-      }
-      setStatusMsg(result.message);
-    } catch (err) {
-      setStatusMsg(`Save error: ${(err as Error).message}`);
-    }
-  }, [backend]);
+    // Auto-save goes through the same single-flight queue as manual syncs.
+    // If several edits happen while one request is in flight, only one
+    // follow-up sync runs and it uses the latest in-memory data.
+    await queueRemoteSync({ backend, showSyncing: false });
+  }, [backend, queueRemoteSync]);
 
   const updateData = useCallback((updater: (prev: Data) => Data) => {
     const before = dataRef.current;
@@ -139,7 +159,7 @@ export function useTaskData() {
     historyRef.current = nextHistory;
     setHistory(nextHistory);
     setData(next);
-    pushToRemote(next, nextHistory);
+    pushToRemote();
   }, [pushToRemote]);
 
   const reloadFromCache = useCallback(async () => {

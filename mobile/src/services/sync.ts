@@ -102,7 +102,7 @@ async function mergeAndPushHistory(
 
 export type SyncResult = {
   data: Data;
-  action: 'pulled' | 'pushed' | 'error' | 'in_sync';
+  action: 'pulled' | 'pushed' | 'deferred' | 'error' | 'in_sync';
   message: string;
 };
 
@@ -140,26 +140,38 @@ async function syncOnce(backend: Backend, localData: Data): Promise<SyncResult> 
 }
 
 export async function syncWithRemote(backend: Backend, localData: Data): Promise<SyncResult> {
-  try {
-    return await syncOnce(backend, localData);
-  } catch (err) {
-    if (err instanceof EtagMismatchError) {
-      try {
-        return await syncOnce(backend, localData);
-      } catch (retryErr) {
-        return {
-          data: localData,
-          action: 'error',
-          message: `Sync error: ${(retryErr as Error).message}`,
-        };
+  const local = normalizeData(localData);
+  let lastErr: unknown;
+
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      return await syncOnce(backend, local);
+    } catch (err) {
+      if (err instanceof EtagMismatchError) {
+        lastErr = err;
+        continue;
       }
+      return {
+        data: local,
+        action: 'error',
+        message: `Sync error: ${(err as Error).message}`,
+      };
     }
+  }
+
+  if (lastErr instanceof EtagMismatchError) {
     return {
-      data: localData,
-      action: 'error',
-      message: `Sync error: ${(err as Error).message}`,
+      data: local,
+      action: 'deferred',
+      message: 'Remote changed repeatedly; local changes are saved on this device and sync will retry.',
     };
   }
+
+  return {
+    data: local,
+    action: 'error',
+    message: 'Sync error: Remote changed since last fetch',
+  };
 }
 
 export async function syncWithRemoteState(
@@ -168,7 +180,7 @@ export async function syncWithRemoteState(
   localHistory: History,
 ): Promise<SyncStateResult> {
   const result = await syncWithRemote(backend, localData);
-  if (result.action === 'error') {
+  if (result.action === 'error' || result.action === 'deferred') {
     return { ...result, history: normalizeHistory(localHistory) };
   }
 
@@ -190,7 +202,7 @@ export async function syncWithRemoteState(
       ...result,
       data: normalizedData,
       history: normalizeHistory(localHistory),
-      message: `${result.message}; history merge deferred (${(err as Error).message})`,
+      message: `${result.message}; history sync deferred and will retry.`,
     };
   }
 }

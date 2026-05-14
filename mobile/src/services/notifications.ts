@@ -8,6 +8,7 @@ import { registerNotificationTaskAsync } from './notificationTasks';
 const NOTIFICATION_IDS_KEY = 'dailyTasksNotificationIds';
 const TASK_CATEGORY_ID = 'task-deadline';
 const NOTIFICATION_CHANNEL_ID = 'default';
+type StoredNotificationIds = Record<number, string | string[]>;
 
 // Configure how notifications are displayed when the app is in the foreground
 Notifications.setNotificationHandler({
@@ -71,7 +72,7 @@ export async function setupNotifications(): Promise<boolean> {
   }
 }
 
-async function loadNotificationIds(): Promise<Record<number, string>> {
+async function loadNotificationIds(): Promise<StoredNotificationIds> {
   try {
     const stored = await AsyncStorage.getItem(NOTIFICATION_IDS_KEY);
     return stored ? JSON.parse(stored) : {};
@@ -80,7 +81,7 @@ async function loadNotificationIds(): Promise<Record<number, string>> {
   }
 }
 
-async function saveNotificationIds(ids: Record<number, string>): Promise<void> {
+async function saveNotificationIds(ids: StoredNotificationIds): Promise<void> {
   try {
     await AsyncStorage.setItem(NOTIFICATION_IDS_KEY, JSON.stringify(ids));
   } catch {}
@@ -88,15 +89,52 @@ async function saveNotificationIds(ids: Record<number, string>): Promise<void> {
 
 export async function cancelTaskNotification(taskId: number): Promise<void> {
   const ids = await loadNotificationIds();
-  const notifId = ids[taskId];
-  if (notifId) {
+  const notifIds = ids[taskId];
+  if (notifIds) {
     try {
-      await Notifications.cancelScheduledNotificationAsync(notifId);
+      for (const notifId of Array.isArray(notifIds) ? notifIds : [notifIds]) {
+        await Notifications.cancelScheduledNotificationAsync(notifId);
+      }
     } catch {}
     const updated = { ...ids };
     delete updated[taskId];
     await saveNotificationIds(updated);
   }
+}
+
+function visibleWeekdays(visibility?: number[]): number[] {
+  if (!visibility || visibility.length === 0) {
+    return [];
+  }
+
+  const validDays = visibility.filter(
+    (day): day is number => Number.isInteger(day) && day >= 0 && day <= 6,
+  );
+  return Array.from(new Set(validDays)).sort((a, b) => a - b);
+}
+
+function notificationTriggersForTask(
+  task: Task,
+  hour: number,
+  minute: number,
+): Notifications.NotificationTriggerInput[] {
+  if (!task.visibility || task.visibility.length === 0) {
+    return [{
+      type: Notifications.SchedulableTriggerInputTypes.DAILY,
+      hour,
+      minute,
+      channelId: NOTIFICATION_CHANNEL_ID,
+    }];
+  }
+
+  const weekdays = visibleWeekdays(task.visibility);
+  return weekdays.map(day => ({
+    type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
+    weekday: day + 1, // Expo uses 1=Sunday; task visibility uses 0=Sunday.
+    hour,
+    minute,
+    channelId: NOTIFICATION_CHANNEL_ID,
+  }));
 }
 
 /**
@@ -110,7 +148,7 @@ export async function rescheduleAllNotifications(tasks: Task[]): Promise<void> {
     await saveNotificationIds({});
 
     const todoWithDeadlines = tasks.filter(t => t.status === 'todo' && t.deadline);
-    const newIds: Record<number, string> = {};
+    const newIds: StoredNotificationIds = {};
 
     for (const task of todoWithDeadlines) {
       const parts = task.deadline!.split(':');
@@ -118,21 +156,24 @@ export async function rescheduleAllNotifications(tasks: Task[]): Promise<void> {
       const minute = parseInt(parts[1], 10);
       if (isNaN(hour) || isNaN(minute)) continue;
 
-      const notifId = await Notifications.scheduleNotificationAsync({
-        content: {
-          title: task.title,
-          body: 'Deadline reached — mark it done or skip for today.',
-          data: { taskId: task.id },
-          categoryIdentifier: TASK_CATEGORY_ID,
-        },
-        trigger: {
-          type: Notifications.SchedulableTriggerInputTypes.DAILY,
-          hour,
-          minute,
-          channelId: NOTIFICATION_CHANNEL_ID,
-        },
-      });
-      newIds[task.id] = notifId;
+      const notifIds: string[] = [];
+      for (const trigger of notificationTriggersForTask(task, hour, minute)) {
+        const notifId = await Notifications.scheduleNotificationAsync({
+          content: {
+            title: task.title,
+            body: 'Deadline reached — mark it done or skip for today.',
+            data: { taskId: task.id },
+            categoryIdentifier: TASK_CATEGORY_ID,
+          },
+          trigger,
+        });
+        notifIds.push(notifId);
+      }
+      if (notifIds.length === 1) {
+        newIds[task.id] = notifIds[0];
+      } else if (notifIds.length > 1) {
+        newIds[task.id] = notifIds;
+      }
     }
 
     await saveNotificationIds(newIds);

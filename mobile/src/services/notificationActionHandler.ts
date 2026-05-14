@@ -13,6 +13,7 @@ import { recordDataChange } from './history';
 import { syncWithRemoteState } from './sync';
 
 const NOTIFICATION_IDS_KEY = 'dailyTasksNotificationIds';
+type StoredNotificationIds = Record<number, string | string[]>;
 
 function isActionableResponse(
   response: Notifications.NotificationResponse,
@@ -71,7 +72,7 @@ export async function syncNotificationActionUpdate(data: Data, history: import('
   }
 }
 
-async function loadNotificationIds(): Promise<Record<number, string>> {
+async function loadNotificationIds(): Promise<StoredNotificationIds> {
   try {
     const stored = await AsyncStorage.getItem(NOTIFICATION_IDS_KEY);
     return stored ? JSON.parse(stored) : {};
@@ -80,7 +81,7 @@ async function loadNotificationIds(): Promise<Record<number, string>> {
   }
 }
 
-async function saveNotificationIds(ids: Record<number, string>): Promise<void> {
+async function saveNotificationIds(ids: StoredNotificationIds): Promise<void> {
   try {
     await AsyncStorage.setItem(NOTIFICATION_IDS_KEY, JSON.stringify(ids));
   } catch {}
@@ -88,14 +89,16 @@ async function saveNotificationIds(ids: Record<number, string>): Promise<void> {
 
 async function cancelTaskNotification(taskId: number): Promise<void> {
   const ids = await loadNotificationIds();
-  const notifId = ids[taskId];
+  const notifIds = ids[taskId];
 
-  if (!notifId) {
+  if (!notifIds) {
     return;
   }
 
   try {
-    await Notifications.cancelScheduledNotificationAsync(notifId);
+    for (const notifId of Array.isArray(notifIds) ? notifIds : [notifIds]) {
+      await Notifications.cancelScheduledNotificationAsync(notifId);
+    }
   } catch {}
 
   const updated = { ...ids };

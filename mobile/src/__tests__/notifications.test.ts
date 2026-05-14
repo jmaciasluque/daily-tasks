@@ -17,7 +17,7 @@ jest.mock('expo-notifications', () => ({
   cancelScheduledNotificationAsync: jest.fn().mockResolvedValue(undefined),
   dismissNotificationAsync: jest.fn().mockResolvedValue(undefined),
   AndroidImportance: { HIGH: 4 },
-  SchedulableTriggerInputTypes: { DAILY: 'daily', TIME_INTERVAL: 'timeInterval' },
+  SchedulableTriggerInputTypes: { DAILY: 'daily', WEEKLY: 'weekly', TIME_INTERVAL: 'timeInterval' },
 }));
 
 jest.mock('expo-task-manager', () => ({
@@ -318,6 +318,18 @@ describe('handleNotificationAction', () => {
 
     expect(Notifications.cancelScheduledNotificationAsync).toHaveBeenCalledWith('scheduled-notif-id');
   });
+
+  it('cancels all stored scheduled reminders for a weekday-limited task', async () => {
+    mockLoadCachedData.mockResolvedValue(makeData([
+      { id: 1, title: 'A', duration: 5, status: 'todo', order: 1, visibility: [1, 3] },
+    ]));
+    (AsyncStorage.getItem as jest.Mock).mockResolvedValue(JSON.stringify({ 1: ['mon-notif-id', 'wed-notif-id'] }));
+
+    await handleNotificationAction(makeResponse('done', 1));
+
+    expect(Notifications.cancelScheduledNotificationAsync).toHaveBeenCalledWith('mon-notif-id');
+    expect(Notifications.cancelScheduledNotificationAsync).toHaveBeenCalledWith('wed-notif-id');
+  });
 });
 
 describe('handleNotificationTaskPayload', () => {
@@ -403,6 +415,48 @@ describe('rescheduleAllNotifications', () => {
     ]);
 
     expect(mockSchedule).toHaveBeenCalledTimes(2);
+  });
+
+  it('uses weekly triggers for tasks limited to specific weekdays', async () => {
+    await rescheduleAllNotifications([
+      { id: 1, title: 'MWF task', duration: 10, status: 'todo', order: 1, deadline: '09:30', visibility: [1, 3, 5] },
+    ]);
+
+    expect(mockSchedule).toHaveBeenCalledTimes(3);
+    const triggers = mockSchedule.mock.calls.map(([request]) => request.trigger);
+    expect(triggers).toEqual([
+      expect.objectContaining({ type: 'weekly', weekday: 2, hour: 9, minute: 30 }),
+      expect.objectContaining({ type: 'weekly', weekday: 4, hour: 9, minute: 30 }),
+      expect.objectContaining({ type: 'weekly', weekday: 6, hour: 9, minute: 30 }),
+    ]);
+    expect(triggers).not.toContainEqual(expect.objectContaining({ type: 'daily' }));
+  });
+
+  it('keeps daily triggers only for tasks visible every day', async () => {
+    await rescheduleAllNotifications([
+      { id: 1, title: 'Every day', duration: 10, status: 'todo', order: 1, deadline: '09:00' },
+      { id: 2, title: 'Also every day', duration: 10, status: 'todo', order: 2, deadline: '10:00', visibility: [] },
+    ]);
+
+    expect(mockSchedule).toHaveBeenCalledTimes(2);
+    expect(mockSchedule.mock.calls[0][0].trigger.type).toBe('daily');
+    expect(mockSchedule.mock.calls[1][0].trigger.type).toBe('daily');
+  });
+
+  it('saves every scheduled ID for multi-day visibility', async () => {
+    mockSchedule
+      .mockResolvedValueOnce('mon-notif-id')
+      .mockResolvedValueOnce('wed-notif-id');
+
+    await rescheduleAllNotifications([
+      { id: 1, title: 'MW task', duration: 10, status: 'todo', order: 1, deadline: '09:00', visibility: [1, 3] },
+    ]);
+
+    const setItemCalls = (AsyncStorage.setItem as jest.Mock).mock.calls;
+    const matchingCalls = setItemCalls.filter(([key]: [string]) => key === 'dailyTasksNotificationIds');
+    const lastCall = matchingCalls[matchingCalls.length - 1];
+    const stored = JSON.parse(lastCall[1]);
+    expect(stored['1']).toEqual(['mon-notif-id', 'wed-notif-id']);
   });
 
   it('does not schedule for done tasks even if they have a deadline', async () => {

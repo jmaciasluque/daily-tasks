@@ -204,7 +204,52 @@ describe('syncWithRemoteState', () => {
     expect(result.data.theme_index).toBe(5);
     // History merge gave up but the action is still 'pulled', not 'error',
     // so the UI's `if (result.action !== 'error')` branch applies the data.
-    expect(result.message).toContain('history merge deferred');
+    expect(result.message).toContain('history sync deferred');
+    expect(result.message).not.toContain('Remote etag changed');
+  });
+
+  it('defers instead of surfacing a hard error when data etag keeps racing', async () => {
+    const localData: Data = {
+      last_reset: '2026-03-27',
+      next_id: 2,
+      tasks: [{ id: 1, title: 'Local edit', duration: 5, status: 'todo', order: 1 }],
+      theme_index: 0,
+      last_modified: 1700005000000,
+    };
+    const localHistory: History = { version: 1, days: [], events: [] };
+
+    const fetchMock = jest.fn();
+    for (let i = 0; i < 5; i += 1) {
+      fetchMock
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          headers: { get: () => `"data-etag-${i}"` },
+          text: async () => JSON.stringify({
+            last_reset: '2026-03-27',
+            next_id: 2,
+            tasks: [{ id: 1, title: 'Remote older', duration: 5, status: 'todo', order: 1 }],
+            theme_index: 0,
+            last_modified: 1700000000000 + i,
+          }),
+        } as any)
+        .mockResolvedValueOnce({ ok: false, status: 412 } as any);
+    }
+
+    Object.defineProperty(global, 'fetch', {
+      configurable: true,
+      writable: true,
+      value: fetchMock,
+    });
+
+    const result = await syncWithRemoteState(backend, localData, localHistory);
+
+    expect(result.action).toBe('deferred');
+    expect(result.data.tasks[0].title).toBe('Local edit');
+    expect(result.message).toContain('Remote changed repeatedly');
+    expect(result.message).not.toContain('Sync error');
+    expect(result.message).not.toContain('Remote etag changed');
+    expect(fetchMock).toHaveBeenCalledTimes(10);
   });
 });
 
