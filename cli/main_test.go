@@ -179,3 +179,61 @@ func TestEnterOnTodoSetsMotivationalStatus(t *testing.T) {
 		t.Fatalf("expected motivational message with percent, got %q", updated.statusMsg)
 	}
 }
+
+func TestAllTasksViewCanEditHiddenTask(t *testing.T) {
+	today := int(time.Now().Weekday())
+	hiddenDay := (today + 1) % 7
+	data := internal.Data{
+		LastReset: time.Now().Format("2006-01-02"),
+		NextID:    3,
+		Tasks: []internal.Task{
+			{ID: 1, Title: "Visible", Duration: 10, Status: "todo", Order: 1},
+			{ID: 2, Title: "Hidden", Duration: 20, Status: "todo", Order: 2, Visibility: []int{hiddenDay}},
+		},
+	}
+
+	m := newModel(data, t.TempDir()+"/tasks.json")
+	if got := len(m.lists[0].Items()); got != 1 {
+		t.Fatalf("expected only visible task in default view, got %d", got)
+	}
+
+	updatedModel, _ := m.updateNormal(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}})
+	updated := updatedModel.(model)
+	if got := len(updated.lists[0].Items()); got != 2 {
+		t.Fatalf("expected hidden task in all-tasks view, got %d items", got)
+	}
+
+	updated.lists[0].Select(1)
+	editModel, _ := updated.updateNormal(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	edit := editModel.(model)
+	if edit.mode != modeEdit || edit.editID != 2 {
+		t.Fatalf("expected hidden task to open for edit, mode=%v editID=%d", edit.mode, edit.editID)
+	}
+}
+
+func TestAllTasksViewBlocksStatusMutationForHiddenTask(t *testing.T) {
+	today := int(time.Now().Weekday())
+	hiddenDay := (today + 1) % 7
+	data := internal.Data{
+		LastReset: time.Now().Format("2006-01-02"),
+		NextID:    2,
+		Tasks: []internal.Task{
+			{ID: 1, Title: "Hidden", Duration: 20, Status: "todo", Order: 1, Visibility: []int{hiddenDay}},
+		},
+	}
+
+	m := newModel(data, t.TempDir()+"/tasks.json")
+	updatedModel, _ := m.updateNormal(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}})
+	updated := updatedModel.(model)
+	updated.lists[0].Select(0)
+
+	blockedModel, _ := updated.updateNormal(tea.KeyMsg{Type: tea.KeyEnter})
+	blocked := blockedModel.(model)
+	task := internal.FindTask(&blocked.data, 1)
+	if task == nil || task.Status != "todo" {
+		t.Fatalf("expected hidden task status to stay todo, got %#v", task)
+	}
+	if !strings.Contains(blocked.statusMsg, "Hidden tasks can be edited or deleted") {
+		t.Fatalf("expected hidden-task guard message, got %q", blocked.statusMsg)
+	}
+}

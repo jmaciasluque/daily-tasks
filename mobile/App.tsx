@@ -19,7 +19,7 @@ import DraggableFlatList from 'react-native-draggable-flatlist';
 
 import { StatsScreen, TaskRow, TaskEditor, SettingsModal } from './src/components';
 import { useTaskData } from './src/hooks/useTaskData';
-import { orderedTasks } from './src/services/data';
+import { isVisibleToday, orderedAllTasks, orderedTasks } from './src/services/data';
 import { buildStatsSummary } from './src/services/history';
 import { setupNotifications, handleNotificationAction } from './src/services/notifications';
 import { pollNextcloudLogin, startNextcloudLogin, type LoginFlowSession } from './src/services/backend_webdav';
@@ -31,6 +31,7 @@ import type { StatsPeriod } from './src/components/StatsScreen';
 const updateId = Updates.updateId ? Updates.updateId.slice(0, 7) : 'bundled';
 const updateChannel = Updates.channel ?? 'local';
 type Screen = 'tasks' | 'stats';
+type TaskFilter = TaskStatus | 'all';
 
 function formatDateInput(date: Date): string {
   return date.toISOString().slice(0, 10);
@@ -75,7 +76,7 @@ export default function App() {
   } = useTaskData();
 
   const [screen, setScreen] = useState<Screen>('tasks');
-  const [activeStatus, setActiveStatus] = useState<TaskStatus>('todo');
+  const [activeStatus, setActiveStatus] = useState<TaskFilter>('todo');
   const [statsPeriod, setStatsPeriod] = useState<StatsPeriod>('today');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
@@ -86,7 +87,7 @@ export default function App() {
   const [backendBusy, setBackendBusy] = useState(false);
 
   const theme = useMemo(() => getTheme(data.theme_index), [data.theme_index]);
-  const list = orderedTasks(data, activeStatus);
+  const list = activeStatus === 'all' ? orderedAllTasks(data) : orderedTasks(data, activeStatus);
   const statusBarStyle = isLightColor(theme.bg) ? 'dark' : 'light';
   const statsRange = useMemo(() => rangeForPeriod(statsPeriod), [statsPeriod]);
   const stats = useMemo(
@@ -258,6 +259,7 @@ export default function App() {
   const todoCount = orderedTasks(data, 'todo').length;
   const doneCount = orderedTasks(data, 'done').length;
   const skippedCount = orderedTasks(data, 'skipped').length;
+  const allCount = data.tasks.length;
 
   const renderSetupScreen = () => (
     <View style={styles.setupScreen}>
@@ -376,6 +378,15 @@ export default function App() {
                     >
                       <Text style={{ color: theme.muted, fontWeight: '600' }}>Skipped ({skippedCount})</Text>
                     </Pressable>
+                    <Pressable
+                      onPress={() => setActiveStatus('all')}
+                      style={[
+                        styles.switchButton,
+                        { backgroundColor: activeStatus === 'all' ? theme.focusBg : theme.panelBg, borderColor: theme.border },
+                      ]}
+                    >
+                      <Text style={{ color: theme.text, fontWeight: '600' }}>All ({allCount})</Text>
+                    </Pressable>
                   </View>
 
                   <View style={[styles.panel, { backgroundColor: theme.panelBg, borderColor: theme.border }]}>
@@ -385,18 +396,22 @@ export default function App() {
                         keyExtractor={(item) => String(item.id)}
                         contentContainerStyle={styles.listContent}
                         onDragEnd={({ data }) => reorderTasks(data)}
-                        renderItem={({ item, drag, isActive }) => (
-                          <TaskRow
-                            task={item}
-                            theme={theme}
-                            drag={drag}
-                            isActive={isActive}
-                            onToggle={() => toggleTaskStatus(item)}
-                            onSkip={() => skipTask(item.id)}
-                            onEdit={() => openEdit(item)}
-                            onDelete={() => handleDeleteTask(item)}
-                          />
-                        )}
+                        renderItem={({ item, drag, isActive }) => {
+                          const hiddenToday = !isVisibleToday(item);
+                          return (
+                            <TaskRow
+                              task={item}
+                              theme={theme}
+                              drag={drag}
+                              isActive={isActive}
+                              hiddenToday={hiddenToday}
+                              onToggle={hiddenToday ? undefined : () => toggleTaskStatus(item)}
+                              onSkip={hiddenToday ? undefined : () => skipTask(item.id)}
+                              onEdit={() => openEdit(item)}
+                              onDelete={() => handleDeleteTask(item)}
+                            />
+                          );
+                        }}
                         ListEmptyComponent={
                           <Text style={[styles.emptyText, { color: theme.muted }]}>No tasks.</Text>
                         }
@@ -406,16 +421,20 @@ export default function App() {
                         data={list}
                         keyExtractor={(item) => String(item.id)}
                         contentContainerStyle={styles.listContent}
-                        renderItem={({ item }) => (
-                          <TaskRow
-                            task={item}
-                            theme={theme}
-                            onToggle={() => toggleTaskStatus(item)}
-                            onSkip={() => skipTask(item.id)}
-                            onEdit={() => openEdit(item)}
-                            onDelete={() => handleDeleteTask(item)}
-                          />
-                        )}
+                        renderItem={({ item }) => {
+                          const hiddenToday = !isVisibleToday(item);
+                          return (
+                            <TaskRow
+                              task={item}
+                              theme={theme}
+                              hiddenToday={hiddenToday}
+                              onToggle={hiddenToday ? undefined : () => toggleTaskStatus(item)}
+                              onSkip={item.status === 'todo' && !hiddenToday ? () => skipTask(item.id) : undefined}
+                              onEdit={() => openEdit(item)}
+                              onDelete={() => handleDeleteTask(item)}
+                            />
+                          );
+                        }}
                         ListEmptyComponent={
                           <Text style={[styles.emptyText, { color: theme.muted }]}>No tasks.</Text>
                         }

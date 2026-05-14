@@ -1,13 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useTaskData } from './hooks/useTaskData';
 import { TaskRow, TaskEditor, SettingsModal } from './components';
-import { orderedTasks } from './services/data';
+import { isVisibleToday, orderedAllTasks, orderedTasks } from './services/data';
 import { fetchServerStats, pollNextcloudSetup, startNextcloudSetup } from './services/api';
 import { getTheme, isLightColor } from './theme/themes';
 import type { StatsSummary, Task, TaskStatus } from './types';
 import { appVersion } from './config/env';
 
 type Screen = 'tasks' | 'stats';
+type TaskFilter = TaskStatus | 'all';
 type StatsPeriod = 'today' | '7d' | '30d' | '90d' | '365d' | 'custom';
 
 function formatDateInput(date: Date): string {
@@ -64,7 +65,7 @@ export default function App() {
   } = useTaskData();
 
   const [screen, setScreen] = useState<Screen>('tasks');
-  const [activeStatus, setActiveStatus] = useState<TaskStatus>('todo');
+  const [activeStatus, setActiveStatus] = useState<TaskFilter>('todo');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
@@ -75,12 +76,13 @@ export default function App() {
   const [statsError, setStatsError] = useState('');
 
   const theme = useMemo(() => getTheme(data.theme_index), [data.theme_index]);
-  const list = orderedTasks(data, activeStatus);
+  const list = activeStatus === 'all' ? orderedAllTasks(data) : orderedTasks(data, activeStatus);
   const isLight = isLightColor(theme.bg);
 
   const todoCount = orderedTasks(data, 'todo').length;
   const doneCount = orderedTasks(data, 'done').length;
   const skippedCount = orderedTasks(data, 'skipped').length;
+  const allCount = data.tasks.length;
 
   useEffect(() => {
     if (screen !== 'stats') {
@@ -189,6 +191,7 @@ export default function App() {
         <button onClick={() => setActiveStatus('todo')} style={tabBtn(activeStatus === 'todo')}>To Do ({todoCount})</button>
         <button onClick={() => setActiveStatus('done')} style={tabBtn(activeStatus === 'done')}>Done ({doneCount})</button>
         <button onClick={() => setActiveStatus('skipped')} style={{ ...tabBtn(activeStatus === 'skipped'), color: theme.muted }}>Skipped ({skippedCount})</button>
+        <button onClick={() => setActiveStatus('all')} style={tabBtn(activeStatus === 'all')}>All ({allCount})</button>
       </div>
 
       <div style={{
@@ -206,17 +209,21 @@ export default function App() {
         {list.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '24px 0', color: theme.muted }}>No tasks.</div>
         ) : (
-          list.map((task) => (
-            <TaskRow
-              key={task.id}
-              task={task}
-              theme={theme}
-              onToggle={() => toggleTaskStatus(task)}
-              onSkip={task.status === 'todo' ? () => skipTask(task.id) : undefined}
-              onEdit={() => openEdit(task)}
-              onDelete={() => handleDeleteTask(task)}
-            />
-          ))
+          list.map((task) => {
+            const hiddenToday = !isVisibleToday(task);
+            return (
+              <TaskRow
+                key={task.id}
+                task={task}
+                theme={theme}
+                hiddenToday={hiddenToday}
+                onToggle={hiddenToday ? undefined : () => toggleTaskStatus(task)}
+                onSkip={task.status === 'todo' && !hiddenToday ? () => skipTask(task.id) : undefined}
+                onEdit={() => openEdit(task)}
+                onDelete={() => handleDeleteTask(task)}
+              />
+            );
+          })
         )}
       </div>
 

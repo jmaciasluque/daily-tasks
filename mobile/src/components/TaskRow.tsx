@@ -8,13 +8,20 @@ type Props = {
   theme: Theme;
   drag?: () => void;
   isActive?: boolean;
-  onToggle: () => void;
+  hiddenToday?: boolean;
+  onToggle?: () => void;
   onSkip?: () => void;
   onEdit: () => void;
   onDelete: () => void;
 };
 
-export function TaskRow({ task, theme, drag, isActive, onToggle, onSkip, onEdit, onDelete }: Props) {
+function formatVisibility(visibility?: number[]): string {
+  if (!visibility || visibility.length === 0) return 'Every day';
+  const names = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  return visibility.map((day) => names[day] ?? String(day)).join(', ');
+}
+
+export function TaskRow({ task, theme, drag, isActive, hiddenToday, onToggle, onSkip, onEdit, onDelete }: Props) {
   return (
     <View style={[styles.row, { borderBottomColor: theme.border, backgroundColor: isActive ? theme.focusBg : undefined }]}>
       <View style={styles.rowText}>
@@ -30,12 +37,25 @@ export function TaskRow({ task, theme, drag, isActive, onToggle, onSkip, onEdit,
           </Text>
         </View>
       </View>
+      {hiddenToday ? (
+        <Text style={[styles.visibilityBadge, { color: theme.muted, borderColor: theme.border }]}>
+          Hidden today · {formatVisibility(task.visibility)}
+        </Text>
+      ) : null}
       <View style={styles.rowActions}>
-        <Pressable onPress={onToggle} style={[styles.iconButton, { borderColor: theme.border }]}>
-          <Text style={{ color: theme.text }}>
-            {task.status === 'todo' ? '✅' : '↩'}
-          </Text>
-        </Pressable>
+        {onToggle ? (
+          <Pressable onPress={onToggle} style={[styles.iconButton, { borderColor: theme.border }]}>
+            <Text style={{ color: theme.text }}>
+              {task.status === 'todo' ? '✅' : '↩'}
+            </Text>
+          </Pressable>
+        ) : (
+          <View style={[styles.iconButton, styles.iconBadge, { borderColor: theme.border }]}>
+            <Text style={{ color: theme.muted }}>
+              {task.status === 'todo' ? '✅' : '↩'}
+            </Text>
+          </View>
+        )}
         {task.status === 'todo' && onSkip && (
           <Pressable onPress={onSkip} style={[styles.iconButton, { borderColor: theme.border }]}>
             <Text style={{ color: theme.muted }}>⏭</Text>
@@ -94,6 +114,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 6,
+    marginTop: 8,
+  },
+  visibilityBadge: {
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    fontSize: 12,
     marginTop: 8,
   },
   iconButton: {

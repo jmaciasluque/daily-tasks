@@ -10,6 +10,44 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 
 ---
 
+## [0.9.5] - 2026-05-14
+
+### All platforms
+
+#### Fixed
+- Tasks hidden by weekday visibility can now still be managed before their next
+  visible day. Mobile and web add an All view for editing or deleting hidden
+  tasks, and the CLI adds a today/all view toggle.
+
+## [0.9.4] - 2026-05-12
+
+### Mobile
+
+#### Fixed
+- Mobile deadline reminders now respect task weekday visibility. Tasks that
+  only appear on selected weekdays use weekly notification triggers for those
+  days instead of daily triggers that can fire while the task is hidden.
+
+## [0.9.3] - 2026-05-11
+
+### Mobile
+
+#### Fixed
+- Mobile Nextcloud sync now runs through a single-flight queue. Manual sync,
+  launch sync, and auto-save requests no longer overlap with each other; extra
+  requests made while a sync is running are coalesced into one follow-up sync
+  using the latest local task state.
+
+## [0.9.2] - 2026-05-11
+
+### Mobile
+
+#### Fixed
+- Repeated Nextcloud etag races during mobile sync now defer the push and keep
+  local changes on the device instead of surfacing a persistent raw
+  `Remote etag changed since last fetch` error. History-file etag races now
+  show a calmer retry message instead of exposing the low-level etag wording.
+
 ## [0.9.1] - 2026-05-06
 
 ### All platforms

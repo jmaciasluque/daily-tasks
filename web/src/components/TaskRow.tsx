@@ -5,13 +5,20 @@ import type { Theme } from '../theme/themes';
 type Props = {
   task: Task;
   theme: Theme;
-  onToggle: () => void;
+  hiddenToday?: boolean;
+  onToggle?: () => void;
   onSkip?: () => void;
   onEdit: () => void;
   onDelete: () => void;
 };
 
-export function TaskRow({ task, theme, onToggle, onSkip, onEdit, onDelete }: Props) {
+function formatVisibility(visibility?: number[]): string {
+  if (!visibility || visibility.length === 0) return 'Every day';
+  const names = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  return visibility.map((day) => names[day] ?? String(day)).join(', ');
+}
+
+export function TaskRow({ task, theme, hiddenToday, onToggle, onSkip, onEdit, onDelete }: Props) {
   const btn: React.CSSProperties = {
     border: `1px solid ${theme.border}`,
     borderRadius: 10,
@@ -29,12 +36,31 @@ export function TaskRow({ task, theme, onToggle, onSkip, onEdit, onDelete }: Pro
           <div style={{ fontSize: 13, color: theme.muted, marginTop: 2 }}>
             {task.duration}m{task.deadline ? ` · ⏰ ${task.deadline}` : ''}
           </div>
+          {hiddenToday && (
+            <div style={{
+              display: 'inline-flex',
+              border: `1px solid ${theme.border}`,
+              borderRadius: 8,
+              padding: '4px 8px',
+              color: theme.muted,
+              fontSize: 12,
+              marginTop: 8,
+            }}>
+              Hidden today · {formatVisibility(task.visibility)}
+            </div>
+          )}
         </div>
       </div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
-        <button onClick={onToggle} style={{ ...btn, color: theme.text }}>
-          {task.status === 'todo' ? '✅' : '↩'}
-        </button>
+        {onToggle ? (
+          <button onClick={onToggle} style={{ ...btn, color: theme.text }}>
+            {task.status === 'todo' ? '✅' : '↩'}
+          </button>
+        ) : (
+          <span style={{ ...btn, color: theme.muted, opacity: 0.4, cursor: 'default' }}>
+            {task.status === 'todo' ? '✅' : '↩'}
+          </span>
+        )}
         {task.status === 'todo' && onSkip && (
           <button onClick={onSkip} style={{ ...btn, color: theme.muted }}>⏭</button>
         )}

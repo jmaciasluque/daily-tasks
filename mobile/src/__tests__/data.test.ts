@@ -3,6 +3,7 @@ import {
   emptyData,
   normalizeData,
   assignMissingOrders,
+  orderedAllTasks,
   orderedTasks,
   isVisibleToday,
   resetIfNeeded,
@@ -425,6 +426,27 @@ describe('orderedTasks visibility filtering', () => {
     };
     const todos = orderedTasks(data, 'todo');
     expect(todos.length).toBe(1);
+  });
+});
+
+describe('orderedAllTasks', () => {
+  const today = new Date().getDay();
+  const otherDay = (today + 1) % 7;
+
+  it('includes hidden tasks for management views', () => {
+    const data: Data = {
+      last_reset: todayString(),
+      next_id: 4,
+      tasks: [
+        { id: 1, title: 'Visible', duration: 5, status: 'todo', order: 2 },
+        { id: 2, title: 'Hidden', duration: 5, status: 'todo', order: 1, visibility: [otherDay] },
+        { id: 3, title: 'Done', duration: 5, status: 'done', order: 1 },
+      ],
+      theme_index: 0,
+    };
+
+    expect(orderedTasks(data, 'todo').map((task) => task.id)).toEqual([1]);
+    expect(orderedAllTasks(data).map((task) => task.id)).toEqual([2, 1, 3]);
   });
 });
 
