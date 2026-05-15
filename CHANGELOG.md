@@ -10,6 +10,14 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 
 ---
 
+## [0.9.6] - 2026-05-15
+
+### Mobile
+
+#### Fixed
+- Mobile launch, manual, and autosave sync now actually use the single-flight
+  queue, preventing overlapping requests from racing their own WebDAV ETags.
+
 ## [0.9.5] - 2026-05-14
 
 ### All platforms

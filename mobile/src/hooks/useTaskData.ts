@@ -13,7 +13,7 @@ import {
   nextcloudSettingsFromConfig,
 } from '../services/storage';
 import { isSettingsComplete, WebDAVBackend } from '../services/backend_webdav';
-import { syncWithRemoteState } from '../services/sync';
+import { remoteStateSyncQueue } from '../services/syncQueue';
 import { rescheduleAllNotifications } from '../services/notifications';
 import { appVariant } from '../config/env';
 
@@ -82,16 +82,22 @@ export function useTaskData() {
       const latestLocal = await loadCachedData();
       const latestHistory = await loadCachedHistory();
       const localReset = applyDailyResetWithHistory(latestLocal, latestHistory);
-      const result = await syncWithRemoteState(activeBackend, localReset.data, localReset.history);
-      if (result.action !== 'error') {
-        const synced = normalizeData(result.data);
-        const syncedReset = applyDailyResetWithHistory(synced, result.history, Date.now());
-        dataRef.current = syncedReset.data;
-        historyRef.current = syncedReset.history;
-        setHistory(syncedReset.history);
-        setData(syncedReset.data);
-      }
-      setStatusMsg(result.message);
+      await remoteStateSyncQueue.enqueue({
+        backend: activeBackend,
+        data: localReset.data,
+        history: localReset.history,
+        applyResult: (result) => {
+          if (result.action !== 'error') {
+            const synced = normalizeData(result.data);
+            const syncedReset = applyDailyResetWithHistory(synced, result.history, Date.now());
+            dataRef.current = syncedReset.data;
+            historyRef.current = syncedReset.history;
+            setHistory(syncedReset.history);
+            setData(syncedReset.data);
+          }
+          setStatusMsg(result.message);
+        },
+      });
     } catch (err) {
       setStatusMsg(`Sync error: ${(err as Error).message}`);
     } finally {
@@ -114,17 +120,23 @@ export function useTaskData() {
       // Auto-save goes through the etag-aware sync flow rather than a blind
       // PUT so concurrent writers (other clients, the Nextcloud desktop
       // client) can't be silently clobbered. Local edits have a fresh
-      // last_modified, so this nearly always pushes; in the rare race where
-      // a remote write lands first, the result reconciles instead.
-      const result = await syncWithRemoteState(backend, dataToSave, historyToSave);
-      if (result.action === 'pulled') {
-        const synced = normalizeData(result.data);
-        dataRef.current = synced;
-        historyRef.current = result.history;
-        setData(synced);
-        setHistory(result.history);
-      }
-      setStatusMsg(result.message);
+      // last_modified, so this nearly always pushes. Requests are queued so
+      // rapid edits cannot overlap their own GET/PUT cycles.
+      await remoteStateSyncQueue.enqueue({
+        backend,
+        data: dataToSave,
+        history: historyToSave,
+        applyResult: (result) => {
+          if (result.action === 'pulled') {
+            const synced = normalizeData(result.data);
+            dataRef.current = synced;
+            historyRef.current = result.history;
+            setData(synced);
+            setHistory(result.history);
+          }
+          setStatusMsg(result.message);
+        },
+      });
     } catch (err) {
       setStatusMsg(`Save error: ${(err as Error).message}`);
     }
