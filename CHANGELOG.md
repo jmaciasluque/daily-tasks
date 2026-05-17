@@ -10,6 +10,14 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 
 ---
 
+## [0.9.8] - 2026-05-17
+
+### CI
+
+#### Added
+- CLI workflow now reports the repository version, test pass/fail counts, total
+  coverage, and a workflow-run link in the job output and PR summary comment.
+
 ## [0.9.7] - 2026-05-17
 
 ### CLI
