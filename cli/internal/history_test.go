@@ -50,6 +50,96 @@ func TestSaveDataWithHistoryRecordsSnapshotsAndEvents(t *testing.T) {
 	}
 }
 
+func TestSaveDataWithHistoryRecordsDetailedEventsAndDeadlines(t *testing.T) {
+	path := t.TempDir() + "/tasks.json"
+	before := Data{
+		LastReset: "2026-04-09",
+		NextID:    4,
+		Tasks: []Task{
+			{ID: 1, Title: "Plan day", Duration: 30, Status: "todo", Order: 1, Deadline: "09:00"},
+			{ID: 2, Title: "Review", Duration: 20, Status: "done", Order: 1, Deadline: "15:00"},
+			{ID: 3, Title: "Archive old plan", Duration: 10, Status: "skipped", Order: 1, Deadline: "18:00"},
+		},
+	}
+	after := CloneData(before)
+	after.Tasks[0].Status = "done"
+	after.Tasks[1].Title = "Review notes"
+	after.Tasks[1].Duration = 25
+	after.Tasks[1].Deadline = "16:30"
+	after.Tasks = append(after.Tasks[:2], Task{ID: 4, Title: "Write summary", Duration: 45, Status: "todo", Order: 2, Deadline: "11:15"})
+	after.NextID = 5
+
+	if err := SaveDataWithHistory(path, before, after); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	history, err := LoadHistory(path)
+	if err != nil {
+		t.Fatalf("failed to load history: %v", err)
+	}
+	if len(history.Days) != 1 {
+		t.Fatalf("expected 1 recorded day, got %d", len(history.Days))
+	}
+
+	snapshotByID := map[int]TaskSnapshot{}
+	for _, snapshot := range history.Days[0].Tasks {
+		snapshotByID[snapshot.ID] = snapshot
+	}
+	if len(snapshotByID) != 3 {
+		t.Fatalf("expected 3 tasks in latest snapshot, got %+v", history.Days[0].Tasks)
+	}
+	if snapshotByID[1].Status != "done" || snapshotByID[1].Deadline != "09:00" {
+		t.Fatalf("expected task 1 snapshot to keep done status and deadline, got %+v", snapshotByID[1])
+	}
+	if snapshotByID[2].Title != "Review notes" || snapshotByID[2].Duration != 25 || snapshotByID[2].Deadline != "16:30" {
+		t.Fatalf("expected task 2 snapshot to keep updated fields, got %+v", snapshotByID[2])
+	}
+	if _, ok := snapshotByID[3]; ok {
+		t.Fatalf("deleted task should not be in latest snapshot: %+v", history.Days[0].Tasks)
+	}
+	if snapshotByID[4].Status != "todo" || snapshotByID[4].Deadline != "11:15" {
+		t.Fatalf("expected task 4 snapshot to keep todo status and deadline, got %+v", snapshotByID[4])
+	}
+
+	if len(history.Events) != 4 {
+		t.Fatalf("expected 4 history events, got %+v", history.Events)
+	}
+	findEvent := func(taskID int, eventType string) HistoryEvent {
+		t.Helper()
+		for _, event := range history.Events {
+			if event.TaskID == taskID && event.Type == eventType {
+				return event
+			}
+		}
+		t.Fatalf("missing %s event for task %d in %+v", eventType, taskID, history.Events)
+		return HistoryEvent{}
+	}
+
+	statusEvent := findEvent(1, "status_changed")
+	if statusEvent.Date != "2026-04-09" || statusEvent.FromStatus != "todo" || statusEvent.ToStatus != "done" ||
+		statusEvent.Duration != 30 || statusEvent.Deadline != "09:00" {
+		t.Fatalf("unexpected status event: %+v", statusEvent)
+	}
+
+	updateEvent := findEvent(2, "task_updated")
+	if updateEvent.Date != "2026-04-09" || updateEvent.Title != "Review notes" || updateEvent.ToStatus != "done" ||
+		updateEvent.Duration != 25 || updateEvent.Deadline != "16:30" {
+		t.Fatalf("unexpected update event: %+v", updateEvent)
+	}
+
+	deleteEvent := findEvent(3, "task_deleted")
+	if deleteEvent.Date != "2026-04-09" || deleteEvent.Title != "Archive old plan" || deleteEvent.FromStatus != "skipped" ||
+		deleteEvent.Duration != 10 || deleteEvent.Deadline != "18:00" {
+		t.Fatalf("unexpected delete event: %+v", deleteEvent)
+	}
+
+	addEvent := findEvent(4, "task_added")
+	if addEvent.Date != "2026-04-09" || addEvent.Title != "Write summary" || addEvent.ToStatus != "todo" ||
+		addEvent.Duration != 45 || addEvent.Deadline != "11:15" {
+		t.Fatalf("unexpected add event: %+v", addEvent)
+	}
+}
+
 func TestSaveDataWithHistoryPreservesPreResetDay(t *testing.T) {
 	path := t.TempDir() + "/tasks.json"
 	before := Data{

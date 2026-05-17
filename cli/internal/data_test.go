@@ -412,6 +412,45 @@ func TestResetIfNewDay(t *testing.T) {
 	})
 }
 
+func TestResetIfNewDayReordersOnlyVisibleTasks(t *testing.T) {
+	today := int(time.Now().Weekday())
+	hiddenDay := (today + 1) % 7
+	data := Data{
+		LastReset: "2020-01-01",
+		Tasks: []Task{
+			{ID: 1, Status: "todo", Order: 4},
+			{ID: 2, Status: "done", Order: 5, Visibility: []int{today}},
+			{ID: 3, Status: "skipped", Order: 2, Visibility: []int{today}},
+			{ID: 4, Status: "done", Order: 1, Visibility: []int{hiddenDay}},
+			{ID: 5, Status: "skipped", Order: 3, Visibility: []int{hiddenDay}},
+		},
+	}
+
+	if !ResetIfNewDay(&data) {
+		t.Fatal("expected reset")
+	}
+
+	want := map[int]struct {
+		status string
+		order  int
+	}{
+		1: {"todo", 1},
+		2: {"todo", 2},
+		3: {"todo", 3},
+		4: {"done", 1},
+		5: {"skipped", 3},
+	}
+	for _, task := range data.Tasks {
+		expected, ok := want[task.ID]
+		if !ok {
+			t.Fatalf("unexpected task ID %d", task.ID)
+		}
+		if task.Status != expected.status || task.Order != expected.order {
+			t.Fatalf("task %d got status=%s order=%d, want status=%s order=%d", task.ID, task.Status, task.Order, expected.status, expected.order)
+		}
+	}
+}
+
 func TestIsAM(t *testing.T) {
 	tests := []struct {
 		deadline string
@@ -518,6 +557,43 @@ func TestVisibleTasksOn(t *testing.T) {
 	}
 	if sun[0].ID != 1 || sun[1].ID != 3 {
 		t.Errorf("unexpected Sunday tasks: %v", sun)
+	}
+}
+
+func TestVisibleTasksOnFullWeekSchedule(t *testing.T) {
+	tasks := []Task{
+		{ID: 1, Title: "Daily"},
+		{ID: 2, Title: "Empty visibility is daily", Visibility: []int{}},
+		{ID: 3, Title: "Weekdays", Visibility: []int{1, 2, 3, 4, 5}},
+		{ID: 4, Title: "Weekends", Visibility: []int{0, 6}},
+		{ID: 5, Title: "Wednesday only", Visibility: []int{3}},
+	}
+
+	tests := []struct {
+		weekday time.Weekday
+		wantIDs []int
+	}{
+		{time.Sunday, []int{1, 2, 4}},
+		{time.Monday, []int{1, 2, 3}},
+		{time.Tuesday, []int{1, 2, 3}},
+		{time.Wednesday, []int{1, 2, 3, 5}},
+		{time.Thursday, []int{1, 2, 3}},
+		{time.Friday, []int{1, 2, 3}},
+		{time.Saturday, []int{1, 2, 4}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.weekday.String(), func(t *testing.T) {
+			visible := VisibleTasksOn(tasks, tt.weekday)
+			if len(visible) != len(tt.wantIDs) {
+				t.Fatalf("expected %d visible tasks, got %d: %+v", len(tt.wantIDs), len(visible), visible)
+			}
+			for i, wantID := range tt.wantIDs {
+				if visible[i].ID != wantID {
+					t.Fatalf("visible[%d].ID = %d, want %d; visible tasks: %+v", i, visible[i].ID, wantID, visible)
+				}
+			}
+		})
 	}
 }
 
