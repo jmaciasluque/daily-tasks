@@ -10,6 +10,15 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 
 ---
 
+## [0.9.7] - 2026-05-17
+
+### CLI
+
+#### Added
+- Added regression tests covering weekday visibility filtering, deadline fields
+  in task history, detailed history events, and daily reset behavior for
+  visible and hidden tasks.
+
 ## [0.9.6] - 2026-05-15
 
 ### Mobile
