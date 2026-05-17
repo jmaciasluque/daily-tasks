@@ -22,7 +22,7 @@ This file mirrors GitHub issues for agent-friendly scanning. Use issues for disc
 
 ## Clients
 ### CLI
-- [ ] #16 CLI first-run configuration TUI gating (labels: cli, ui, configuration)
+- [x] #16 CLI first-run configuration TUI gating (labels: cli, ui, configuration)
 - [x] #17 Add non-TUI CLI commands (labels: cli, ui)
 - [x] #18 CLI: AM/PM grouping + deadline indicator (labels: cli, ui)
 
