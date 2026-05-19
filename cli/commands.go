@@ -597,7 +597,7 @@ func runSetup(args []string) error {
 	if len(args) > 0 {
 		return errors.New("setup does not take any arguments")
 	}
-	return runInteractiveSetup(os.Stdin, os.Stdout)
+	return internal.RunSetupTUI()
 }
 
 func loadDataAndReset() (internal.Data, string, bool, error) {

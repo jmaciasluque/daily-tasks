@@ -10,6 +10,16 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 
 ---
 
+## [0.10.0] - 2026-05-18
+
+### CLI
+
+#### Added
+- Added a first-run Bubble Tea setup flow that requires choosing either
+  local-only storage or Nextcloud before the normal TUI starts.
+- The `daily-tasks setup` command now reopens the same setup TUI so backend
+  configuration can be changed later.
+
 ## [0.9.8] - 2026-05-17
 
 ### CI
