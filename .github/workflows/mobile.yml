@@ -6,12 +6,23 @@ on:
   pull_request:
     branches: ['**']
 
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
     
     steps:
       - uses: actions/checkout@v4
+
+      - name: Read version
+        id: version
+        run: |
+          VERSION="$(tr -d '[:space:]' < VERSION)"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -24,10 +35,98 @@ jobs:
         working-directory: ./mobile
         run: npm ci
 
-      - name: Run tests
+      - name: Run tests with coverage
+        id: tests
         working-directory: ./mobile
-        run: npm test
+        run: |
+          set +e
+          npm test -- --coverage 2>&1 | tee test.log
+          TEST_EXIT=${PIPESTATUS[0]}
+          set -e
+
+          PASSED="$(grep -cE '^\s*[0-9]+ passed' test.log || true)"
+          FAILED="$(grep -cE '^\s*[0-9]+ failed' test.log || true)"
+          SKIPPED="$(grep -cE '^\s*[0-9]+ skipped' test.log || true)"
+
+          COVERAGE="unavailable"
+          if grep -q 'All files' test.log; then
+            COVERAGE="$(grep 'All files' test.log | awk '{print $4}')"
+          fi
+
+          echo "Tests passed: ${PASSED}"
+          echo "Tests failed: ${FAILED}"
+          echo "Coverage: ${COVERAGE}"
+
+          {
+            echo "passed=${PASSED}"
+            echo "failed=${FAILED}"
+            echo "skipped=${SKIPPED}"
+            echo "coverage=${COVERAGE}"
+            echo "exit_code=${TEST_EXIT}"
+          } >> "$GITHUB_OUTPUT"
+
+          exit "$TEST_EXIT"
 
       - name: Type check
         working-directory: ./mobile
         run: APP_VARIANT=testing APP_VERSION_SUFFIX=ci npx tsc --noEmit
+
+      - name: Comment PR summary
+        if: ${{ always() && github.event_name == 'pull_request' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+          TESTS_PASSED: ${{ steps.tests.outputs.passed || '0' }}
+          TESTS_FAILED: ${{ steps.tests.outputs.failed || '0' }}
+          COVERAGE: ${{ steps.tests.outputs.coverage || 'unavailable' }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+
+          RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          COMMENTS_URL="${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments"
+          COMMENT_MARKER="<!-- daily-tasks-mobile-ci-summary -->"
+          COMMENT_FILE="$(mktemp)"
+          PAYLOAD_FILE="$(mktemp)"
+          COMMENTS_FILE="$(mktemp)"
+
+          cat > "$COMMENT_FILE" <<EOF
+          ${COMMENT_MARKER}
+          ## Mobile CI Summary
+
+          | Item | Result |
+          | --- | --- |
+          | Version | \`${VERSION}\` |
+          | Tests | ${TESTS_PASSED} passed, ${TESTS_FAILED} failed |
+          | Code coverage | ${COVERAGE} |
+          | Workflow run | [View run](${RUN_URL}) |
+          EOF
+
+          jq -n --rawfile body "$COMMENT_FILE" '{body: $body}' > "$PAYLOAD_FILE"
+
+          if ! curl -fsSL \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "${COMMENTS_URL}?per_page=100" > "$COMMENTS_FILE"; then
+            echo "::warning::Unable to fetch existing PR comments."
+            exit 0
+          fi
+
+          COMMENT_ID="$(jq -r --arg marker "$COMMENT_MARKER" '.[] | select(.user.type == "Bot" and (.body | contains($marker))) | .id' "$COMMENTS_FILE" | head -n 1)"
+
+          if [ -n "$COMMENT_ID" ]; then
+            curl -fsSL -X PATCH \
+              -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              -d @"$PAYLOAD_FILE" \
+              "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/issues/comments/${COMMENT_ID}" > /dev/null || true
+          else
+            curl -fsSL -X POST \
+              -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              -d @"$PAYLOAD_FILE" \
+              "$COMMENTS_URL" > /dev/null || true
+          fi
