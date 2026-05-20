@@ -520,4 +520,107 @@ describe('etag-aware WebDAV', () => {
     expect(result.data.tasks[0].title).toBe('Newer remote');
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
+
+  it('syncWithRemote retries repeated etag races before surfacing an error', async () => {
+    const localData: Data = {
+      last_reset: '2026-03-27',
+      next_id: 2,
+      tasks: [{ id: 1, title: 'Local', duration: 5, status: 'todo', order: 1 }],
+      theme_index: 0,
+      last_modified: 1700001000000,
+    };
+
+    const fetchMock = jest.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: { get: () => '"etag-1"' },
+        text: async () => JSON.stringify({
+          last_reset: '2026-03-27',
+          next_id: 2,
+          tasks: [{ id: 1, title: 'Remote', duration: 5, status: 'todo', order: 1 }],
+          theme_index: 0,
+          last_modified: 1700000000000,
+        }),
+      } as any)
+      .mockResolvedValueOnce({ ok: false, status: 412 } as any)
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: { get: () => '"etag-2"' },
+        text: async () => JSON.stringify({
+          last_reset: '2026-03-27',
+          next_id: 2,
+          tasks: [{ id: 1, title: 'Remote again', duration: 5, status: 'todo', order: 1 }],
+          theme_index: 0,
+          last_modified: 1700000000000,
+        }),
+      } as any)
+      .mockResolvedValueOnce({ ok: false, status: 412 } as any)
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: { get: () => '"etag-3"' },
+        text: async () => JSON.stringify({
+          last_reset: '2026-03-27',
+          next_id: 2,
+          tasks: [{ id: 1, title: 'Remote final', duration: 5, status: 'todo', order: 1 }],
+          theme_index: 0,
+          last_modified: 1700000000000,
+        }),
+      } as any)
+      .mockResolvedValueOnce({ ok: true, status: 204 } as any);
+
+    Object.defineProperty(global, 'fetch', {
+      configurable: true,
+      writable: true,
+      value: fetchMock,
+    });
+
+    const result = await syncWithRemote(backend, localData);
+
+    expect(result.action).toBe('pushed');
+    expect(result.message).toBe('Pushed local changes');
+    expect(fetchMock).toHaveBeenCalledTimes(6);
+  });
+
+  it('syncWithRemote hides raw etag wording when retry limit is exhausted', async () => {
+    const localData: Data = {
+      last_reset: '2026-03-27',
+      next_id: 2,
+      tasks: [{ id: 1, title: 'Local', duration: 5, status: 'todo', order: 1 }],
+      theme_index: 0,
+      last_modified: 1700001000000,
+    };
+
+    const fetchMock = jest.fn().mockImplementation(async (_url: string, init?: RequestInit) => {
+      if (init?.method === 'PUT') {
+        return { ok: false, status: 412 } as any;
+      }
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: () => '"moving-etag"' },
+        text: async () => JSON.stringify({
+          last_reset: '2026-03-27',
+          next_id: 2,
+          tasks: [{ id: 1, title: 'Remote', duration: 5, status: 'todo', order: 1 }],
+          theme_index: 0,
+          last_modified: 1700000000000,
+        }),
+      } as any;
+    });
+
+    Object.defineProperty(global, 'fetch', {
+      configurable: true,
+      writable: true,
+      value: fetchMock,
+    });
+
+    const result = await syncWithRemote(backend, localData);
+
+    expect(result.action).toBe('error');
+    expect(result.message).toBe('Sync conflict: remote changed while saving. Please retry sync.');
+    expect(result.message).not.toContain('Remote etag changed since last fetch');
+  });
 });

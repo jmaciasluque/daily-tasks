@@ -10,6 +10,16 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 
 ---
 
+## [0.10.1] - 2026-05-20
+
+### Mobile
+
+#### Fixed
+- Background notification action sync now uses the same single-flight queue as
+  foreground sync, avoiding self-inflicted WebDAV ETag races.
+- Mobile data sync now retries repeated ETag moves before surfacing a calm
+  conflict message instead of the raw low-level ETag error.
+
 ## [0.10.0] - 2026-05-18
 
 ### CLI
