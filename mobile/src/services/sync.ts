@@ -110,6 +110,8 @@ export type SyncStateResult = SyncResult & {
   history: History;
 };
 
+const syncEtagRetryLimit = 4;
+
 async function syncOnce(backend: Backend, localData: Data): Promise<SyncResult> {
   const { data: remoteRaw, etag } = await fetchRemoteData(backend);
 
@@ -140,26 +142,25 @@ async function syncOnce(backend: Backend, localData: Data): Promise<SyncResult> 
 }
 
 export async function syncWithRemote(backend: Backend, localData: Data): Promise<SyncResult> {
-  try {
-    return await syncOnce(backend, localData);
-  } catch (err) {
-    if (err instanceof EtagMismatchError) {
-      try {
-        return await syncOnce(backend, localData);
-      } catch (retryErr) {
+  for (let attempt = 0; attempt < syncEtagRetryLimit; attempt += 1) {
+    try {
+      return await syncOnce(backend, localData);
+    } catch (err) {
+      if (!(err instanceof EtagMismatchError)) {
         return {
           data: localData,
           action: 'error',
-          message: `Sync error: ${(retryErr as Error).message}`,
+          message: `Sync error: ${(err as Error).message}`,
         };
       }
     }
-    return {
-      data: localData,
-      action: 'error',
-      message: `Sync error: ${(err as Error).message}`,
-    };
   }
+
+  return {
+    data: localData,
+    action: 'error',
+    message: 'Sync conflict: remote changed while saving. Please retry sync.',
+  };
 }
 
 export async function syncWithRemoteState(

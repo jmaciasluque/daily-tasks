@@ -10,7 +10,7 @@ import {
   saveCachedHistory,
 } from './storage';
 import { recordDataChange } from './history';
-import { syncWithRemoteState } from './sync';
+import { remoteStateSyncQueue } from './syncQueue';
 
 const NOTIFICATION_IDS_KEY = 'dailyTasksNotificationIds';
 
@@ -62,10 +62,19 @@ export async function syncNotificationActionUpdate(data: Data, history: import('
   }
 
   try {
-    // Use the etag-aware sync path so background notification updates can't
-    // blind-overwrite a concurrent foreground write. Local change remains in
-    // AsyncStorage even if the remote write loses its race.
-    await syncWithRemoteState(backend, data, history);
+    // Use the same queue as foreground sync/autosave so background
+    // notification actions cannot race their own WebDAV GET/PUT cycle.
+    await remoteStateSyncQueue.enqueue({
+      backend,
+      data,
+      history,
+      applyResult: async (result) => {
+        if (result.action !== 'error') {
+          await saveCachedData(result.data);
+          await saveCachedHistory(result.history);
+        }
+      },
+    });
   } catch {
     // Keep the local change even if remote sync fails.
   }
