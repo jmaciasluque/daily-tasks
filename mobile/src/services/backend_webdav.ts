@@ -43,6 +43,10 @@ function basicAuthHeader(user: string, pass: string): string {
   return `Basic ${encoded}`;
 }
 
+function normalizeEtag(etag: string | null): string {
+  return (etag ?? '').replace(/-gzip(?="?$)/, '');
+}
+
 function buildDataURL(settings: Settings): string {
   const base = settings.baseUrl.replace(/\/+$/, '');
   const path = settings.remotePath.startsWith('/') ? settings.remotePath : `/${settings.remotePath}`;
@@ -107,7 +111,7 @@ export class WebDAVBackend implements Backend {
     if (!res.ok) {
       throw new Error(`Fetch failed: ${res.status}`);
     }
-    return { bytes: await res.text(), etag: res.headers.get('ETag') ?? '' };
+    return { bytes: await res.text(), etag: normalizeEtag(res.headers.get('ETag')) };
   }
 
   async push(key: string, body: string, ifMatch?: string): Promise<void> {

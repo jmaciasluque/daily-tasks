@@ -403,6 +403,46 @@ describe('etag-aware WebDAV', () => {
     expect(result.data).not.toBeNull();
   });
 
+  it('normalizes compressed Nextcloud ETags before conditional writes', async () => {
+    const localData: Data = {
+      last_reset: '2026-03-27',
+      next_id: 2,
+      tasks: [{ id: 1, title: 'Local', duration: 5, status: 'todo', order: 1 }],
+      theme_index: 0,
+      last_modified: 1700001000000,
+    };
+    let capturedHeaders: Record<string, string> | undefined;
+
+    const fetchMock = jest.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: { get: () => '"abc123-gzip"' },
+        text: async () => JSON.stringify({
+          last_reset: '2026-03-27',
+          next_id: 2,
+          tasks: [{ id: 1, title: 'Remote', duration: 5, status: 'todo', order: 1 }],
+          theme_index: 0,
+          last_modified: 1700000000000,
+        }),
+      } as any)
+      .mockImplementationOnce(async (_url: string, init: any) => {
+        capturedHeaders = init.headers;
+        return { ok: true, status: 204 } as any;
+      });
+
+    Object.defineProperty(global, 'fetch', {
+      configurable: true,
+      writable: true,
+      value: fetchMock,
+    });
+
+    const result = await syncWithRemote(backend, localData);
+
+    expect(result.action).toBe('pushed');
+    expect(capturedHeaders?.['If-Match']).toBe('"abc123"');
+  });
+
   it('pushRemoteData sends If-Match when given a concrete etag', async () => {
     let capturedHeaders: Record<string, string> | undefined;
     const fetchMock = jest.fn().mockImplementation(async (_url: string, init: any) => {
