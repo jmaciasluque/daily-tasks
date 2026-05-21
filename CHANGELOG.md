@@ -10,6 +10,19 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 
 ---
 
+## [0.11.0] - 2026-05-21
+
+### Mobile
+
+#### Added
+- Todo list now groups deadline tasks under **AM** and **PM** section
+  dividers, matching the CLI behaviour. Tasks with a deadline before noon
+  appear under `── AM ──`; tasks with a deadline from noon onward appear
+  under `── PM ──`. Tasks without a deadline continue to appear after the
+  deadline groups, unchanged.
+
+---
+
 ## [0.10.2] - 2026-05-21
 
 ### Mobile

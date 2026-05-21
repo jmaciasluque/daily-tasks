@@ -28,7 +28,7 @@ This file mirrors GitHub issues for agent-friendly scanning. Use issues for disc
 
 ### Mobile
 - [ ] #19 Mobile: backend chooser for new backends (labels: mobile, ui, configuration)
-- [ ] #20 Mobile: AM/PM grouping for deadline tasks (labels: mobile, ui)
+- [x] #20 Mobile: AM/PM grouping for deadline tasks (labels: mobile, ui)
 
 ### Web
 - [x] #21 Web app scaffold with local backend (labels: web, ui, backend)
@@ -41,7 +41,7 @@ This file mirrors GitHub issues for agent-friendly scanning. Use issues for disc
 
 ## Consistency & hardening
 - [x] #26 Align last_modified units across clients + schema (labels: documentation, backend, ddl)
-- [ ] #27 Standardize last_reset date handling (local vs UTC) (labels: documentation, backend, dml, testing)
+- [x] #27 Standardize last_reset date handling (local vs UTC) (labels: documentation, backend, dml, testing)
 - [x] #28 Unify sync action semantics between CLI and mobile (labels: backend, cli, mobile)
 - [x] #29 Harden CLI WebDAV not-found handling (labels: backend, cli, testing)
-- [ ] #30 Add remaining mobile tests for hooks and notification sync edge cases (labels: backend, mobile, testing)
+- [x] #30 Add remaining mobile tests for hooks and notification sync edge cases (labels: backend, mobile, testing)
