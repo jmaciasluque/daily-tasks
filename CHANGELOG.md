@@ -10,6 +10,18 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 
 ---
 
+## [0.11.2] - 2026-05-22
+
+### Testing
+
+#### Added
+- Mobile: 44 new tests covering `useTaskData` hook (full lifecycle), `notificationTasks`
+  background task callback and registration branches, and `storage` cache/config paths.
+- Overall mobile statement coverage: 65.5% → 83.4%; branch coverage: 52.1% → 62.8%.
+- Installed `react-test-renderer@19.1.0` as a dev dependency for hook testing.
+
+---
+
 ## [0.11.1] - 2026-05-22
 
 ### CI
