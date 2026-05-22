@@ -6,7 +6,7 @@ This file mirrors GitHub issues for agent-friendly scanning. Use issues for disc
 - [x] #5 Define multi-backend interface and sync contract (labels: backend, architecture)
 - [ ] #6 Add backend registry for additional backend types (labels: backend, configuration)
 - [x] #7 Persist backend selection across clients (labels: backend, configuration, ui)
-- [ ] #12 Event replay/aggregation for current state (labels: backend, architecture, dml)
+- [x] #12 Event replay/aggregation for current state (labels: backend, architecture, dml)
 - [ ] #13 Define multi-backend conflict/merge policy (labels: backend, architecture)
 
 ## Data model
