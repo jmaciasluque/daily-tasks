@@ -10,6 +10,17 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 
 ---
 
+## [0.11.1] - 2026-05-22
+
+### CI
+
+#### Changed
+- Updated `actions/checkout` v4 → v6 and `actions/setup-node` v4 → v6 in all
+  workflows to eliminate Node.js 20 deprecation warnings.
+- Bumped Node.js runtime in mobile/EAS workflows from 20 → 22 (LTS).
+
+---
+
 ## [0.11.0] - 2026-05-21
 
 ### Mobile
