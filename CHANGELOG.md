@@ -10,7 +10,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 
 ---
 
-## [0.10.3] - 2026-05-22
+## [0.11.1] - 2026-05-22
 
 ### CI
 
@@ -18,6 +18,19 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 - Updated `actions/checkout` v4 → v6 and `actions/setup-node` v4 → v6 in all
   workflows to eliminate Node.js 20 deprecation warnings.
 - Bumped Node.js runtime in mobile/EAS workflows from 20 → 22 (LTS).
+
+---
+
+## [0.11.0] - 2026-05-21
+
+### Mobile
+
+#### Added
+- Todo list now groups deadline tasks under **AM** and **PM** section
+  dividers, matching the CLI behaviour. Tasks with a deadline before noon
+  appear under `── AM ──`; tasks with a deadline from noon onward appear
+  under `── PM ──`. Tasks without a deadline continue to appear after the
+  deadline groups, unchanged.
 
 ---
 

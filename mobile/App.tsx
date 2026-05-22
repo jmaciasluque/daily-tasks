@@ -19,7 +19,7 @@ import DraggableFlatList from 'react-native-draggable-flatlist';
 
 import { StatsScreen, TaskRow, TaskEditor, SettingsModal } from './src/components';
 import { useTaskData } from './src/hooks/useTaskData';
-import { isVisibleToday, orderedAllTasks, orderedTasks } from './src/services/data';
+import { isAM, isVisibleToday, orderedAllTasks, orderedTasks } from './src/services/data';
 import { buildStatsSummary } from './src/services/history';
 import { setupNotifications, handleNotificationAction } from './src/services/notifications';
 import { pollNextcloudLogin, startNextcloudLogin, type LoginFlowSession } from './src/services/backend_webdav';
@@ -397,19 +397,33 @@ export default function App() {
                         contentContainerStyle={styles.listContent}
                         onDragEnd={({ data }) => reorderTasks(data)}
                         renderItem={({ item, drag, isActive }) => {
+                          const index = list.indexOf(item);
+                          const prev = index > 0 ? list[index - 1] : null;
+                          const showAMHeader = !!(item.deadline && isAM(item.deadline) &&
+                            (!prev || !prev.deadline || !isAM(prev.deadline)));
+                          const showPMHeader = !!(item.deadline && !isAM(item.deadline) &&
+                            (!prev || !prev.deadline || isAM(prev.deadline)));
                           const hiddenToday = !isVisibleToday(item);
                           return (
-                            <TaskRow
-                              task={item}
-                              theme={theme}
-                              drag={drag}
-                              isActive={isActive}
-                              hiddenToday={hiddenToday}
-                              onToggle={hiddenToday ? undefined : () => toggleTaskStatus(item)}
-                              onSkip={hiddenToday ? undefined : () => skipTask(item.id)}
-                              onEdit={() => openEdit(item)}
-                              onDelete={() => handleDeleteTask(item)}
-                            />
+                            <View>
+                              {showAMHeader && (
+                                <Text style={[styles.sectionDivider, { color: theme.muted }]}>── AM ──</Text>
+                              )}
+                              {showPMHeader && (
+                                <Text style={[styles.sectionDivider, { color: theme.muted }]}>── PM ──</Text>
+                              )}
+                              <TaskRow
+                                task={item}
+                                theme={theme}
+                                drag={drag}
+                                isActive={isActive}
+                                hiddenToday={hiddenToday}
+                                onToggle={hiddenToday ? undefined : () => toggleTaskStatus(item)}
+                                onSkip={hiddenToday ? undefined : () => skipTask(item.id)}
+                                onEdit={() => openEdit(item)}
+                                onDelete={() => handleDeleteTask(item)}
+                              />
+                            </View>
                           );
                         }}
                         ListEmptyComponent={
@@ -623,5 +637,11 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingHorizontal: 10,
     paddingVertical: 6,
+  },
+  sectionDivider: {
+    fontSize: 12,
+    textAlign: 'center',
+    paddingVertical: 4,
+    letterSpacing: 1,
   },
 });

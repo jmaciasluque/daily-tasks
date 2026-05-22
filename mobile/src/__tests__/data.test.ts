@@ -6,6 +6,7 @@ import {
   orderedAllTasks,
   orderedTasks,
   isVisibleToday,
+  isAM,
   resetIfNeeded,
   nextOrder,
   cloneData,
@@ -520,5 +521,24 @@ describe('cloneData', () => {
     clone.tasks[0].deadline = '09:00';
 
     expect(original.tasks[0].deadline).toBe('08:30');
+  });
+});
+
+describe('isAM', () => {
+  it('returns true for hours before noon', () => {
+    expect(isAM('00:00')).toBe(true);
+    expect(isAM('08:30')).toBe(true);
+    expect(isAM('11:59')).toBe(true);
+  });
+
+  it('returns false for noon and after', () => {
+    expect(isAM('12:00')).toBe(false);
+    expect(isAM('13:45')).toBe(false);
+    expect(isAM('23:59')).toBe(false);
+  });
+
+  it('returns false for empty or short strings', () => {
+    expect(isAM('')).toBe(false);
+    expect(isAM('9:00')).toBe(false);
   });
 });
