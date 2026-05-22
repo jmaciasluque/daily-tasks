@@ -1,1 +1,5 @@
 cli/bin/
+cli/daily-tasks
+web/tsconfig.tsbuildinfo
+Local
+.claude/
