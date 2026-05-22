@@ -651,3 +651,31 @@ func TestClampIndex(t *testing.T) {
 		}
 	}
 }
+
+// ---------------------------------------------------------------------------
+// IsVisibleToday
+// ---------------------------------------------------------------------------
+
+func TestIsVisibleTodayAlwaysVisible(t *testing.T) {
+	task := Task{ID: 1, Title: "Daily", Duration: 10, Status: "todo"}
+	if !task.IsVisibleToday() {
+		t.Error("task with no visibility restriction should be visible today")
+	}
+}
+
+func TestIsVisibleTodayRestrictedToToday(t *testing.T) {
+	today := int(time.Now().Weekday())
+	task := Task{ID: 1, Title: "Today only", Duration: 10, Status: "todo", Visibility: []int{today}}
+	if !task.IsVisibleToday() {
+		t.Error("task restricted to today's weekday should be visible today")
+	}
+}
+
+func TestIsVisibleTodayRestrictedToOtherDay(t *testing.T) {
+	today := int(time.Now().Weekday())
+	otherDay := (today + 1) % 7
+	task := Task{ID: 1, Title: "Other day", Duration: 10, Status: "todo", Visibility: []int{otherDay}}
+	if task.IsVisibleToday() {
+		t.Error("task restricted to another weekday should not be visible today")
+	}
+}

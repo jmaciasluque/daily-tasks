@@ -379,3 +379,333 @@ func TestDailyResetHistoryIgnoresHiddenTasks(t *testing.T) {
 		t.Fatalf("unexpected reset event: %+v", event)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// HistoryWithCurrentSnapshot
+// ---------------------------------------------------------------------------
+
+func TestHistoryWithCurrentSnapshotAddsDay(t *testing.T) {
+	data := Data{
+		LastReset: "2026-05-01",
+		NextID:    2,
+		Tasks: []Task{
+			{ID: 1, Title: "Morning run", Duration: 30, Status: "done", Order: 1},
+		},
+	}
+	history := History{Version: 1}
+	now := int64(1000000000000)
+
+	got := HistoryWithCurrentSnapshot(history, data, now)
+	if len(got.Days) != 1 {
+		t.Fatalf("expected 1 day, got %d", len(got.Days))
+	}
+	if got.Days[0].Date != "2026-05-01" {
+		t.Errorf("unexpected date: %q", got.Days[0].Date)
+	}
+	if len(got.Days[0].Tasks) != 1 || got.Days[0].Tasks[0].Title != "Morning run" {
+		t.Errorf("unexpected tasks: %+v", got.Days[0].Tasks)
+	}
+}
+
+func TestHistoryWithCurrentSnapshotUpdatesExistingDay(t *testing.T) {
+	data := Data{
+		LastReset: "2026-05-01",
+		NextID:    2,
+		Tasks: []Task{
+			{ID: 1, Title: "Read", Duration: 20, Status: "done", Order: 1},
+		},
+	}
+	history := History{
+		Version: 1,
+		Days: []HistoryDay{
+			{
+				Date:      "2026-05-01",
+				UpdatedAt: 500,
+				Tasks:     []TaskSnapshot{{ID: 1, Title: "Read", Duration: 20, Status: "todo"}},
+			},
+		},
+	}
+
+	got := HistoryWithCurrentSnapshot(history, data, 1000)
+	if len(got.Days) != 1 {
+		t.Fatalf("expected still 1 day, got %d", len(got.Days))
+	}
+	if got.Days[0].Tasks[0].Status != "done" {
+		t.Errorf("expected updated status, got %q", got.Days[0].Tasks[0].Status)
+	}
+}
+
+func TestHistoryWithCurrentSnapshotZeroTimestamp(t *testing.T) {
+	data := Data{LastReset: "2026-05-02", NextID: 1}
+	history := History{}
+	// now=0 means use real time
+	got := HistoryWithCurrentSnapshot(history, data, 0)
+	if got.Version != historyVersion {
+		t.Errorf("expected version %d, got %d", historyVersion, got.Version)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// HistoryContentEqual
+// ---------------------------------------------------------------------------
+
+func TestHistoryContentEqualIdentical(t *testing.T) {
+	h := History{
+		Version: 1,
+		Days: []HistoryDay{
+			{Date: "2026-05-01", Tasks: []TaskSnapshot{{ID: 1, Title: "T", Duration: 10, Status: "done"}}},
+		},
+	}
+	if !HistoryContentEqual(h, h) {
+		t.Error("identical histories should be equal")
+	}
+}
+
+func TestHistoryContentEqualDifferentDayCount(t *testing.T) {
+	a := History{Version: 1, Days: []HistoryDay{{Date: "2026-05-01"}}}
+	b := History{Version: 1}
+	if HistoryContentEqual(a, b) {
+		t.Error("histories with different day counts should not be equal")
+	}
+}
+
+func TestHistoryContentEqualDifferentTaskStatus(t *testing.T) {
+	day := func(status string) History {
+		return History{
+			Version: 1,
+			Days: []HistoryDay{
+				{Date: "2026-05-01", Tasks: []TaskSnapshot{{ID: 1, Title: "T", Duration: 10, Status: status}}},
+			},
+		}
+	}
+	if HistoryContentEqual(day("todo"), day("done")) {
+		t.Error("histories with different task status should not be equal")
+	}
+}
+
+func TestHistoryContentEqualDifferentEvents(t *testing.T) {
+	base := History{Version: 1}
+	withEvent := History{
+		Version: 1,
+		Events:  []HistoryEvent{{Timestamp: 1, Date: "2026-05-01", Type: "task_added", TaskID: 1}},
+	}
+	if HistoryContentEqual(base, withEvent) {
+		t.Error("histories with different event counts should not be equal")
+	}
+}
+
+func TestHistoryContentEqualVersionZeroNormalized(t *testing.T) {
+	a := History{Version: 0}
+	b := History{Version: 1}
+	if !HistoryContentEqual(a, b) {
+		t.Error("version 0 should be normalized to 1")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// MergeHistories
+// ---------------------------------------------------------------------------
+
+func TestMergeHistoriesEmptyBoth(t *testing.T) {
+	merged := MergeHistories(History{}, History{})
+	if merged.Version != historyVersion {
+		t.Errorf("expected version %d, got %d", historyVersion, merged.Version)
+	}
+	if len(merged.Days) != 0 || len(merged.Events) != 0 {
+		t.Errorf("expected empty merge, got %+v", merged)
+	}
+}
+
+func TestMergeHistoriesPicksNewerDay(t *testing.T) {
+	local := History{
+		Version: 1,
+		Days: []HistoryDay{
+			{Date: "2026-05-01", UpdatedAt: 100, Tasks: []TaskSnapshot{{ID: 1, Status: "todo"}}},
+		},
+	}
+	remote := History{
+		Version: 1,
+		Days: []HistoryDay{
+			{Date: "2026-05-01", UpdatedAt: 200, Tasks: []TaskSnapshot{{ID: 1, Status: "done"}}},
+		},
+	}
+
+	merged := MergeHistories(local, remote)
+	if len(merged.Days) != 1 {
+		t.Fatalf("expected 1 day, got %d", len(merged.Days))
+	}
+	if merged.Days[0].Tasks[0].Status != "done" {
+		t.Errorf("expected remote (newer) day to win, got %q", merged.Days[0].Tasks[0].Status)
+	}
+}
+
+func TestMergeHistoriesCombinesDifferentDays(t *testing.T) {
+	local := History{
+		Version: 1,
+		Days:    []HistoryDay{{Date: "2026-05-01", Tasks: []TaskSnapshot{{ID: 1, Status: "done"}}}},
+	}
+	remote := History{
+		Version: 1,
+		Days:    []HistoryDay{{Date: "2026-05-02", Tasks: []TaskSnapshot{{ID: 1, Status: "todo"}}}},
+	}
+
+	merged := MergeHistories(local, remote)
+	if len(merged.Days) != 2 {
+		t.Fatalf("expected 2 merged days, got %d", len(merged.Days))
+	}
+}
+
+func TestMergeHistoriesDeduplicatesEvents(t *testing.T) {
+	event := HistoryEvent{
+		Timestamp: 1000, Date: "2026-05-01", Type: "task_added",
+		TaskID: 1, Title: "Task A", ToStatus: "todo", Duration: 10,
+	}
+	local := History{Version: 1, Events: []HistoryEvent{event}}
+	remote := History{Version: 1, Events: []HistoryEvent{event}}
+
+	merged := MergeHistories(local, remote)
+	if len(merged.Events) != 1 {
+		t.Errorf("expected deduplication to 1 event, got %d", len(merged.Events))
+	}
+}
+
+func TestMergeHistoriesCombinesUniqueEvents(t *testing.T) {
+	e1 := HistoryEvent{Timestamp: 1000, Date: "2026-05-01", Type: "task_added", TaskID: 1, Duration: 10}
+	e2 := HistoryEvent{Timestamp: 2000, Date: "2026-05-01", Type: "status_changed", TaskID: 1, Duration: 10}
+	local := History{Version: 1, Events: []HistoryEvent{e1}}
+	remote := History{Version: 1, Events: []HistoryEvent{e2}}
+
+	merged := MergeHistories(local, remote)
+	if len(merged.Events) != 2 {
+		t.Errorf("expected 2 unique events, got %d", len(merged.Events))
+	}
+}
+
+func TestMergeHistoriesTakesMaxVersion(t *testing.T) {
+	local := History{Version: 1}
+	remote := History{Version: 2}
+	merged := MergeHistories(local, remote)
+	if merged.Version != 2 {
+		t.Errorf("expected version 2, got %d", merged.Version)
+	}
+}
+
+func TestMergeHistoriesTakesMaxUpdatedAt(t *testing.T) {
+	local := History{Version: 1, UpdatedAt: 500}
+	remote := History{Version: 1, UpdatedAt: 999}
+	merged := MergeHistories(local, remote)
+	if merged.UpdatedAt != 999 {
+		t.Errorf("expected UpdatedAt 999, got %d", merged.UpdatedAt)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// EnsureHistorySnapshot
+// ---------------------------------------------------------------------------
+
+func TestEnsureHistorySnapshotCreatesSnapshot(t *testing.T) {
+	path := t.TempDir() + "/tasks.json"
+	data := Data{
+		LastReset: "2026-05-03",
+		NextID:    2,
+		Tasks:     []Task{{ID: 1, Title: "Walk", Duration: 15, Status: "done", Order: 1}},
+	}
+
+	if err := EnsureHistorySnapshot(path, data); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	history, err := LoadHistory(path)
+	if err != nil {
+		t.Fatalf("failed to load history: %v", err)
+	}
+	if len(history.Days) != 1 || history.Days[0].Date != "2026-05-03" {
+		t.Fatalf("expected snapshot for 2026-05-03, got %+v", history.Days)
+	}
+}
+
+func TestEnsureHistorySnapshotNoSaveWhenUnchanged(t *testing.T) {
+	path := t.TempDir() + "/tasks.json"
+	data := Data{
+		LastReset: "2026-05-03",
+		NextID:    2,
+		Tasks:     []Task{{ID: 1, Title: "Walk", Duration: 15, Status: "done", Order: 1}},
+	}
+
+	// First call creates snapshot
+	if err := EnsureHistorySnapshot(path, data); err != nil {
+		t.Fatalf("first call error: %v", err)
+	}
+	h1, _ := LoadHistory(path)
+
+	// Second call with same data should be a no-op (UpdatedAt not bumped)
+	if err := EnsureHistorySnapshot(path, data); err != nil {
+		t.Fatalf("second call error: %v", err)
+	}
+	h2, _ := LoadHistory(path)
+
+	if h1.UpdatedAt != h2.UpdatedAt {
+		t.Errorf("expected no-op on unchanged data, but UpdatedAt changed %d -> %d", h1.UpdatedAt, h2.UpdatedAt)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// BuildStats
+// ---------------------------------------------------------------------------
+
+func TestBuildStats(t *testing.T) {
+	path := t.TempDir() + "/tasks.json"
+
+	before := Data{
+		LastReset: "2026-04-10",
+		NextID:    3,
+		Tasks: []Task{
+			{ID: 1, Title: "Run", Duration: 30, Status: "done", Order: 1},
+			{ID: 2, Title: "Read", Duration: 20, Status: "skipped", Order: 1},
+		},
+	}
+	after := Data{
+		LastReset: "2026-04-11",
+		NextID:    3,
+		Tasks: []Task{
+			{ID: 1, Title: "Run", Duration: 30, Status: "todo", Order: 1},
+			{ID: 2, Title: "Read", Duration: 20, Status: "todo", Order: 2},
+		},
+	}
+	if err := SaveDataWithHistory(path, before, after); err != nil {
+		t.Fatalf("seed error: %v", err)
+	}
+
+	stats, err := BuildStats(path, after, "2026-04-10", "2026-04-11")
+	if err != nil {
+		t.Fatalf("BuildStats error: %v", err)
+	}
+	if stats.RecordedDays < 1 {
+		t.Errorf("expected at least 1 recorded day, got %d", stats.RecordedDays)
+	}
+	if stats.DoneCount < 1 {
+		t.Errorf("expected at least 1 done count, got %d", stats.DoneCount)
+	}
+	if stats.From != "2026-04-10" || stats.To != "2026-04-11" {
+		t.Errorf("unexpected from/to: %q / %q", stats.From, stats.To)
+	}
+}
+
+func TestBuildStatsCreatesSnapshotForCurrentData(t *testing.T) {
+	path := t.TempDir() + "/tasks.json"
+	today := time.Now().Format("2006-01-02")
+
+	current := Data{
+		LastReset: today,
+		NextID:    2,
+		Tasks:     []Task{{ID: 1, Title: "Meditate", Duration: 10, Status: "done", Order: 1}},
+	}
+
+	stats, err := BuildStats(path, current, today, today)
+	if err != nil {
+		t.Fatalf("BuildStats error: %v", err)
+	}
+	if stats.RecordedDays != 1 {
+		t.Errorf("expected 1 recorded day for today, got %d", stats.RecordedDays)
+	}
+}

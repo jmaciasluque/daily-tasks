@@ -10,6 +10,21 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 
 ---
 
+## [0.11.3] - 2026-05-22
+
+### Testing
+
+#### Added
+- CLI: new `commands_test.go` covering `parseVisibility`, `parseDeadline`, `parseID`,
+  `wantsHelp`, `parseStatsPeriod`, `resolveStatsRange`, and CLI runners (`runList`,
+  `runAdd`, `runMove`, `runSkip`, `runDelete`) with temp-file fixtures.
+- CLI internal: tests for `IsVisibleToday`, `HistoryWithCurrentSnapshot`,
+  `MergeHistories`, `EnsureHistorySnapshot`, `BuildStats`, `FetchRemoteHistory`,
+  `PushRemoteHistory`, `PushRemoteState`, `SyncRemoteHistory`, `SyncStateWithRemote`.
+- CLI total coverage: 41% → 60.2% (`daily-tasks/internal`: 63.5% → 75.5%).
+
+---
+
 ## [0.11.2] - 2026-05-22
 
 ### Testing

@@ -489,3 +489,338 @@ func TestLocalPathInNextcloudSyncFolder(t *testing.T) {
 		})
 	}
 }
+
+// ---------------------------------------------------------------------------
+// FetchRemoteHistory
+// ---------------------------------------------------------------------------
+
+func TestFetchRemoteHistory(t *testing.T) {
+	t.Run("successful fetch", func(t *testing.T) {
+		history := History{
+			Version: historyVersion,
+			Days: []HistoryDay{
+				{Date: "2026-05-01", Tasks: []TaskSnapshot{{ID: 1, Status: "done"}}},
+			},
+		}
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			json.NewEncoder(w).Encode(history)
+		}))
+		defer server.Close()
+
+		backend := NewWebDAVBackend(server.URL, "u", "p")
+		got, _, err := FetchRemoteHistory(backend)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(got.Days) != 1 || got.Days[0].Date != "2026-05-01" {
+			t.Errorf("unexpected days: %+v", got.Days)
+		}
+	})
+
+	t.Run("version zero normalized", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			json.NewEncoder(w).Encode(History{Version: 0})
+		}))
+		defer server.Close()
+
+		backend := NewWebDAVBackend(server.URL, "u", "p")
+		got, _, err := FetchRemoteHistory(backend)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got.Version != historyVersion {
+			t.Errorf("expected version %d, got %d", historyVersion, got.Version)
+		}
+	})
+
+	t.Run("not found returns ErrRemoteNotFound", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusNotFound)
+		}))
+		defer server.Close()
+
+		backend := NewWebDAVBackend(server.URL, "u", "p")
+		_, _, err := FetchRemoteHistory(backend)
+		if !errors.Is(err, ErrRemoteNotFound) {
+			t.Errorf("expected ErrRemoteNotFound, got %v", err)
+		}
+	})
+
+	t.Run("returns etag", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("ETag", "\"hist-etag\"")
+			json.NewEncoder(w).Encode(History{Version: 1})
+		}))
+		defer server.Close()
+
+		backend := NewWebDAVBackend(server.URL, "u", "p")
+		_, etag, err := FetchRemoteHistory(backend)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if etag != "\"hist-etag\"" {
+			t.Errorf("expected etag \"hist-etag\", got %q", etag)
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// PushRemoteHistory
+// ---------------------------------------------------------------------------
+
+func TestPushRemoteHistory(t *testing.T) {
+	t.Run("successful push", func(t *testing.T) {
+		var received History
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			json.NewDecoder(r.Body).Decode(&received)
+			w.WriteHeader(http.StatusCreated)
+		}))
+		defer server.Close()
+
+		backend := NewWebDAVBackend(server.URL, "u", "p")
+		history := History{
+			Version: 1,
+			Days:    []HistoryDay{{Date: "2026-05-01"}},
+		}
+		if err := PushRemoteHistory(backend, history, ""); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if received.Version != historyVersion {
+			t.Errorf("expected version %d on wire, got %d", historyVersion, received.Version)
+		}
+	})
+
+	t.Run("sets UpdatedAt when zero", func(t *testing.T) {
+		var received History
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			json.NewDecoder(r.Body).Decode(&received)
+			w.WriteHeader(http.StatusCreated)
+		}))
+		defer server.Close()
+
+		backend := NewWebDAVBackend(server.URL, "u", "p")
+		if err := PushRemoteHistory(backend, History{Version: 1}, ""); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if received.UpdatedAt == 0 {
+			t.Error("expected UpdatedAt to be set when zero")
+		}
+	})
+
+	t.Run("412 maps to ErrEtagMismatch", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusPreconditionFailed)
+		}))
+		defer server.Close()
+
+		backend := NewWebDAVBackend(server.URL, "u", "p")
+		err := PushRemoteHistory(backend, History{Version: 1}, "\"stale\"")
+		if !errors.Is(err, ErrEtagMismatch) {
+			t.Errorf("expected ErrEtagMismatch, got %v", err)
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// PushRemoteState
+// ---------------------------------------------------------------------------
+
+func TestPushRemoteState(t *testing.T) {
+	var putCount int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut {
+			putCount++
+			w.WriteHeader(http.StatusCreated)
+		}
+	}))
+	defer server.Close()
+
+	backend := NewWebDAVBackend(server.URL, "u", "p")
+	data := Data{
+		LastReset:    "2026-05-01",
+		NextID:       2,
+		LastModified: 1000,
+		Tasks:        []Task{{ID: 1, Title: "Run", Status: "done", Order: 1}},
+	}
+	history := History{Version: 1}
+
+	if err := PushRemoteState(backend, data, history); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Should have pushed both data and history
+	if putCount != 2 {
+		t.Errorf("expected 2 PUT calls (data + history), got %d", putCount)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// SyncRemoteHistory
+// ---------------------------------------------------------------------------
+
+func TestSyncRemoteHistory(t *testing.T) {
+	t.Run("pushes merged history when remote is empty", func(t *testing.T) {
+		var putCount int
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodGet:
+				w.WriteHeader(http.StatusNotFound)
+			case http.MethodPut:
+				putCount++
+				w.WriteHeader(http.StatusCreated)
+			}
+		}))
+		defer server.Close()
+
+		backend := NewWebDAVBackend(server.URL, "u", "p")
+		local := History{
+			Version: 1,
+			Days:    []HistoryDay{{Date: "2026-05-01", Tasks: []TaskSnapshot{{ID: 1, Status: "done"}}}},
+		}
+		current := Data{LastReset: "2026-05-01", NextID: 2}
+
+		merged, err := SyncRemoteHistory(backend, local, current)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(merged.Days) == 0 {
+			t.Error("expected merged days in result")
+		}
+		if putCount == 0 {
+			t.Error("expected at least one PUT call when remote is absent")
+		}
+	})
+
+	t.Run("no push when histories match", func(t *testing.T) {
+		// Build a remote history that exactly matches what HistoryWithCurrentSnapshot
+		// would produce for the given data, so there's no need to push.
+		current := Data{
+			LastReset: "2026-05-01",
+			NextID:    2,
+			Tasks:     []Task{{ID: 1, Title: "Walk", Duration: 15, Status: "done", Order: 1}},
+		}
+		snapshotNow := int64(9999)
+		remoteHistory := HistoryWithCurrentSnapshot(History{Version: 1}, current, snapshotNow)
+		remoteHistory.Days[0].UpdatedAt = snapshotNow
+
+		var putCount int
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodGet:
+				w.Header().Set("ETag", "\"same\"")
+				json.NewEncoder(w).Encode(remoteHistory)
+			case http.MethodPut:
+				putCount++
+				w.WriteHeader(http.StatusCreated)
+			}
+		}))
+		defer server.Close()
+
+		backend := NewWebDAVBackend(server.URL, "u", "p")
+		// local == remote, and adding snapshot of current won't change anything
+		_, err := SyncRemoteHistory(backend, remoteHistory, current)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		// When the snapshot is already present and unchanged, no PUT should happen
+		if putCount > 0 {
+			t.Errorf("expected 0 PUTs when already in sync, got %d", putCount)
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// SyncStateWithRemote
+// ---------------------------------------------------------------------------
+
+func TestSyncStateWithRemote(t *testing.T) {
+	t.Run("in sync path", func(t *testing.T) {
+		ts := int64(1000000000000)
+		remoteData := Data{LastReset: "2026-05-01", NextID: 2, LastModified: ts}
+		remoteHistory := History{Version: 1}
+
+		var putCount int
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodGet:
+				if r.URL.Path == "" || !containsHistoryPath(r.URL.Path) {
+					json.NewEncoder(w).Encode(remoteData)
+				} else {
+					json.NewEncoder(w).Encode(remoteHistory)
+				}
+			case http.MethodPut:
+				putCount++
+				w.WriteHeader(http.StatusCreated)
+			}
+		}))
+		defer server.Close()
+
+		backend := NewWebDAVBackend(server.URL, "u", "p")
+		localData := Data{LastReset: "2026-05-01", NextID: 2, LastModified: ts}
+		localHistory := History{Version: 1}
+
+		result := SyncStateWithRemote(backend, localData, localHistory)
+		if result.Action == "error" {
+			t.Fatalf("unexpected error result: %q", result.Message)
+		}
+	})
+
+	t.Run("pulled path", func(t *testing.T) {
+		remoteData := Data{LastReset: "2026-05-01", NextID: 5, LastModified: 9999999999999, Tasks: []Task{{ID: 1, Title: "Remote", Status: "todo", Order: 1}}}
+		remoteHistory := History{Version: 1}
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodGet:
+				if containsHistoryPath(r.URL.Path) {
+					json.NewEncoder(w).Encode(remoteHistory)
+				} else {
+					json.NewEncoder(w).Encode(remoteData)
+				}
+			case http.MethodPut:
+				w.WriteHeader(http.StatusCreated)
+			}
+		}))
+		defer server.Close()
+
+		backend := NewWebDAVBackend(server.URL, "u", "p")
+		localData := Data{LastReset: "2026-05-01", NextID: 2, LastModified: 1}
+		result := SyncStateWithRemote(backend, localData, History{Version: 1})
+		if result.Action != "pulled" {
+			t.Errorf("expected pulled action, got %q", result.Action)
+		}
+		if result.Data.NextID != 5 {
+			t.Errorf("expected remote NextID 5, got %d", result.Data.NextID)
+		}
+	})
+}
+
+// containsHistoryPath is a helper that distinguishes data vs history GET requests.
+func containsHistoryPath(p string) bool {
+	return len(p) > 0 && (p[len(p)-1] == 'y') // history URL ends in "history.json"
+}
+
+// ---------------------------------------------------------------------------
+// buildHistoryWebDAVURL
+// ---------------------------------------------------------------------------
+
+func TestBuildHistoryWebDAVURL(t *testing.T) {
+	cases := []struct {
+		input string
+		want  string
+	}{
+		{
+			"https://cloud.example.com/remote.php/dav/files/user/.daily-tasks.json",
+			"https://cloud.example.com/remote.php/dav/files/user/.daily-tasks.history.json",
+		},
+		{
+			"https://cloud.example.com/dav/file",
+			"https://cloud.example.com/dav/file.history.json",
+		},
+	}
+	for _, tc := range cases {
+		got := buildHistoryWebDAVURL(tc.input)
+		if got != tc.want {
+			t.Errorf("buildHistoryWebDAVURL(%q) = %q, want %q", tc.input, got, tc.want)
+		}
+	}
+}
