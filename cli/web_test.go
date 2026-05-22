@@ -239,3 +239,164 @@ func TestWebServerStats(t *testing.T) {
 		t.Fatalf("unexpected stats payload: %+v", payload.Stats)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// writeMethodNotAllowed
+// ---------------------------------------------------------------------------
+
+func TestWebServerMethodNotAllowed(t *testing.T) {
+	tempDir := t.TempDir()
+	server := testWebServer(tempDir + "/tasks.json")
+	t.Setenv("DAILY_TASKS_CONFIG", server.configPath)
+
+	// GET on /api/setup/local should return 405
+	req := httptest.NewRequest(http.MethodGet, "/api/setup/local", nil)
+	res := httptest.NewRecorder()
+	server.routes().ServeHTTP(res, req)
+
+	if res.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405 for GET /api/setup/local, got %d", res.Code)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// handleSPA
+// ---------------------------------------------------------------------------
+
+func TestWebServerSPAServeIndexHTML(t *testing.T) {
+	tempDir := t.TempDir()
+	server := testWebServer(tempDir + "/tasks.json")
+	t.Setenv("DAILY_TASKS_CONFIG", server.configPath)
+	if err := internal.SaveAppConfig(server.configPath, internal.AppConfig{Backend: internal.BackendLocal}); err != nil {
+		t.Fatalf("failed to seed config: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	res := httptest.NewRecorder()
+	server.routes().ServeHTTP(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected 200 for GET /, got %d", res.Code)
+	}
+	if !strings.Contains(res.Body.String(), "<html") {
+		t.Error("expected HTML response for /")
+	}
+}
+
+func TestWebServerSPAMethodNotAllowed(t *testing.T) {
+	tempDir := t.TempDir()
+	server := testWebServer(tempDir + "/tasks.json")
+	t.Setenv("DAILY_TASKS_CONFIG", server.configPath)
+	if err := internal.SaveAppConfig(server.configPath, internal.AppConfig{Backend: internal.BackendLocal}); err != nil {
+		t.Fatalf("failed to seed config: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/", nil)
+	res := httptest.NewRecorder()
+	server.routes().ServeHTTP(res, req)
+
+	if res.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405 for POST /, got %d", res.Code)
+	}
+}
+
+func TestWebServerSPASetupPageWhenNotConfigured(t *testing.T) {
+	tempDir := t.TempDir()
+	server := testWebServer(tempDir + "/tasks.json")
+	// No config = not configured
+	t.Setenv("DAILY_TASKS_CONFIG", server.configPath)
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	res := httptest.NewRecorder()
+	server.routes().ServeHTTP(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected 200 for setup page, got %d", res.Code)
+	}
+	body := res.Body.String()
+	if !strings.Contains(body, "<!doctype html") {
+		t.Error("expected HTML setup page when backend not configured")
+	}
+}
+
+func TestWebServerSPAApiPathReturns404(t *testing.T) {
+	tempDir := t.TempDir()
+	server := testWebServer(tempDir + "/tasks.json")
+	t.Setenv("DAILY_TASKS_CONFIG", server.configPath)
+	if err := internal.SaveAppConfig(server.configPath, internal.AppConfig{Backend: internal.BackendLocal}); err != nil {
+		t.Fatalf("failed to seed config: %v", err)
+	}
+
+	// Unregistered API path falls through to SPA catch-all which returns 404
+	req := httptest.NewRequest(http.MethodGet, "/api/unknown-endpoint", nil)
+	res := httptest.NewRecorder()
+	server.routes().ServeHTTP(res, req)
+
+	if res.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for /api/unknown-endpoint, got %d", res.Code)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// handleSetupNextcloudPoll — error paths
+// ---------------------------------------------------------------------------
+
+func TestWebServerSetupNextcloudPollMissingSession(t *testing.T) {
+	tempDir := t.TempDir()
+	server := testWebServer(tempDir + "/tasks.json")
+	t.Setenv("DAILY_TASKS_CONFIG", server.configPath)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/setup/nextcloud/poll", nil)
+	res := httptest.NewRecorder()
+	server.routes().ServeHTTP(res, req)
+
+	if res.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for missing session, got %d", res.Code)
+	}
+}
+
+func TestWebServerSetupNextcloudPollUnknownSession(t *testing.T) {
+	tempDir := t.TempDir()
+	server := testWebServer(tempDir + "/tasks.json")
+	t.Setenv("DAILY_TASKS_CONFIG", server.configPath)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/setup/nextcloud/poll?session=nope", nil)
+	res := httptest.NewRecorder()
+	server.routes().ServeHTTP(res, req)
+
+	if res.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for unknown session, got %d", res.Code)
+	}
+}
+
+func TestWebServerSetupNextcloudPollWrongMethod(t *testing.T) {
+	tempDir := t.TempDir()
+	server := testWebServer(tempDir + "/tasks.json")
+	t.Setenv("DAILY_TASKS_CONFIG", server.configPath)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/setup/nextcloud/poll", nil)
+	res := httptest.NewRecorder()
+	server.routes().ServeHTTP(res, req)
+
+	if res.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405 for POST on poll endpoint, got %d", res.Code)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// handleSetupNextcloudStart — wrong method
+// ---------------------------------------------------------------------------
+
+func TestWebServerSetupNextcloudStartWrongMethod(t *testing.T) {
+	tempDir := t.TempDir()
+	server := testWebServer(tempDir + "/tasks.json")
+	t.Setenv("DAILY_TASKS_CONFIG", server.configPath)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/setup/nextcloud/start", nil)
+	res := httptest.NewRecorder()
+	server.routes().ServeHTTP(res, req)
+
+	if res.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405 for GET on nextcloud/start, got %d", res.Code)
+	}
+}
