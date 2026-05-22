@@ -679,3 +679,93 @@ func TestIsVisibleTodayRestrictedToOtherDay(t *testing.T) {
 		t.Error("task restricted to another weekday should not be visible today")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Schema versioning and migration
+// ---------------------------------------------------------------------------
+
+func TestSchemaVersionIsOne(t *testing.T) {
+	if SchemaVersion != 1 {
+		t.Errorf("expected SchemaVersion=1, got %d", SchemaVersion)
+	}
+}
+
+func TestMigrateData_V0ToV1(t *testing.T) {
+	// Simulate a pre-versioning file: Version field absent (zero value).
+	old := Data{
+		LastReset:  "2026-01-01",
+		NextID:     3,
+		Tasks:      []Task{{ID: 1, Title: "Old task", Duration: 5, Status: "todo", Order: 1}},
+		ThemeIndex: 0,
+	}
+	if old.Version != 0 {
+		t.Fatalf("precondition: expected Version=0, got %d", old.Version)
+	}
+
+	migrated := NormalizeData(old)
+	if migrated.Version != 1 {
+		t.Errorf("expected Version=1 after migration, got %d", migrated.Version)
+	}
+	// Data should be preserved
+	if migrated.NextID != 3 {
+		t.Errorf("expected NextID=3, got %d", migrated.NextID)
+	}
+	if len(migrated.Tasks) != 1 || migrated.Tasks[0].Title != "Old task" {
+		t.Errorf("tasks should be preserved after migration, got %+v", migrated.Tasks)
+	}
+}
+
+func TestMigrateData_AlreadyAtCurrentVersion(t *testing.T) {
+	data := Data{Version: SchemaVersion, LastReset: "2026-01-01", NextID: 1}
+	migrated := NormalizeData(data)
+	if migrated.Version != SchemaVersion {
+		t.Errorf("expected Version=%d, got %d", SchemaVersion, migrated.Version)
+	}
+}
+
+func TestLoadData_V0FileGetsVersionStamped(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "v0.json")
+
+	// Write a file with no version field (v0 format)
+	v0 := `{
+		"last_reset": "2026-01-01",
+		"next_id": 2,
+		"tasks": [{"id":1,"title":"Task A","duration":10,"status":"todo","order":1}],
+		"theme_index": 0,
+		"last_modified": 1700000000000
+	}`
+	if err := os.WriteFile(path, []byte(v0), 0o600); err != nil {
+		t.Fatalf("failed to write v0 file: %v", err)
+	}
+
+	data, err := LoadData(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if data.Version != 1 {
+		t.Errorf("expected Version=1 after loading v0 file, got %d", data.Version)
+	}
+}
+
+func TestSaveData_WritesVersion(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "out.json")
+
+	data := Data{
+		LastReset:  "2026-01-01",
+		NextID:     1,
+		ThemeIndex: 0,
+	}
+	if err := SaveData(path, data); err != nil {
+		t.Fatalf("unexpected error saving: %v", err)
+	}
+
+	loaded, err := LoadData(path)
+	if err != nil {
+		t.Fatalf("unexpected error loading: %v", err)
+	}
+	if loaded.Version != SchemaVersion {
+		t.Errorf("expected Version=%d in saved file, got %d", SchemaVersion, loaded.Version)
+	}
+}

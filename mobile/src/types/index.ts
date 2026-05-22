@@ -85,6 +85,7 @@ export type StatsSummary = {
 };
 
 export type Data = {
+  version?: number;
   last_reset: string;
   next_id: number;
   tasks: Task[];

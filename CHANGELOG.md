@@ -10,6 +10,25 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 
 ---
 
+## [0.11.4] - 2026-05-22
+
+### Added
+- Data file schema versioning: `version` field added to `Data` (CLI Go struct,
+  mobile TypeScript type, and `schema.json`).
+- Migration framework: `migrateData` in Go (`cli/internal/data.go`) and
+  `migrateData` in TypeScript (`mobile/src/services/data.ts`) apply incremental
+  version steps on every load.
+- v0 → v1 migration: existing files without a `version` field (v0) are
+  automatically stamped to `version: 1` on first load — no data transformation
+  required (all v0 fields are structurally compatible with v1).
+- Tests: `TestMigrateData_V0ToV1`, `TestMigrateData_AlreadyAtCurrentVersion`,
+  `TestLoadData_V0FileGetsVersionStamped`, `TestSaveData_WritesVersion`,
+  `TestSchemaVersionIsOne`.
+
+Closes #10.
+
+---
+
 ## [0.11.3] - 2026-05-22
 
 ### Testing

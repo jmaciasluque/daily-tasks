@@ -12,7 +12,7 @@ This file mirrors GitHub issues for agent-friendly scanning. Use issues for disc
 ## Data model
 - [x] #8 Extend task schema: visibility rules, AM/PM, deadline (labels: ddl, backend)
 - [x] #9 Add history/event log schema (labels: ddl, dml, backend)
-- [ ] #10 Add data/history migration + versioning (labels: backend, configuration)
+- [x] #10 Add data/history migration + versioning (labels: backend, configuration)
 - [x] #11 Record history for all mutations (labels: dml, backend)
 
 ## Behavior

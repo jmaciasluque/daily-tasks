@@ -11,6 +11,16 @@ import (
 	"time"
 )
 
+// SchemaVersion is the current data file schema version.
+// Increment this whenever a breaking or structural change to Data or Task is made,
+// and add a corresponding migration step in migrateData.
+//
+// Version history:
+//   0 (implicit): original format — no version field. Fields: last_reset, next_id,
+//                 tasks, theme_index, last_modified, deadline (task), visibility (task).
+//   1: explicit version stamp. No structural changes from v0; adds the version field.
+const SchemaVersion = 1
+
 // Task represents a single task item
 type Task struct {
 	ID         int    `json:"id"`
@@ -24,6 +34,7 @@ type Task struct {
 
 // Data represents the complete task data structure
 type Data struct {
+	Version      int    `json:"version"`
 	LastReset    string `json:"last_reset"`
 	NextID       int    `json:"next_id"`
 	Tasks        []Task `json:"tasks"`
@@ -80,8 +91,21 @@ func SaveData(path string, data Data) error {
 	return os.WriteFile(path, b, 0o600)
 }
 
+// migrateData upgrades data from older schema versions to SchemaVersion.
+// Each version step must be idempotent and safe to run on files that are
+// already at a higher version (the if-chain stops at the right step).
+func migrateData(data Data) Data {
+	if data.Version < 1 {
+		// v0 → v1: no structural changes; stamp the version field.
+		data.Version = 1
+	}
+	// Future: add `if data.Version < 2 { ... }` steps here.
+	return data
+}
+
 // NormalizeData ensures all fields have valid values
 func NormalizeData(data Data) Data {
+	data = migrateData(data)
 	if data.LastReset == "" {
 		data.LastReset = time.Now().Format("2006-01-02")
 	}

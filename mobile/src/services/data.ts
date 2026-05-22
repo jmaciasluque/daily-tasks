@@ -1,6 +1,14 @@
 import type { Data, Task, TaskStatus } from '../types';
 import { THEMES } from '../theme/themes';
 
+// SCHEMA_VERSION is the current data file schema version.
+// Mirrors SchemaVersion in cli/internal/data.go — keep them in sync.
+//
+// Version history:
+//   0 (implicit): original format — no version field.
+//   1: explicit version stamp. No structural changes from v0.
+const SCHEMA_VERSION = 1;
+
 function normalizeLastModified(ts?: number): number {
   if (!ts) return 0;
   return ts > 0 && ts < 100000000000 ? ts * 1000 : ts;
@@ -12,6 +20,7 @@ export function todayString(): string {
 
 export function emptyData(): Data {
   return {
+    version: SCHEMA_VERSION,
     last_reset: todayString(),
     next_id: 1,
     tasks: [],
@@ -20,13 +29,27 @@ export function emptyData(): Data {
   };
 }
 
+// migrateData upgrades data from older schema versions to SCHEMA_VERSION.
+// Mirrors migrateData in cli/internal/data.go — keep them in sync.
+function migrateData(data: Data): Data {
+  const version = data.version ?? 0;
+  if (version < 1) {
+    // v0 → v1: no structural changes; stamp the version field.
+    return { ...data, version: 1 };
+  }
+  // Future: add version < 2 steps here.
+  return data;
+}
+
 export function normalizeData(input: Data): Data {
+  const migrated = migrateData(input);
   const data: Data = {
-    last_reset: input.last_reset || todayString(),
-    next_id: input.next_id || 1,
-    tasks: Array.isArray(input.tasks) ? input.tasks : [],
-    theme_index: Number.isFinite(input.theme_index) ? input.theme_index : 0,
-    last_modified: normalizeLastModified(input.last_modified), // Normalize old second-based timestamps
+    version: SCHEMA_VERSION,
+    last_reset: migrated.last_reset || todayString(),
+    next_id: migrated.next_id || 1,
+    tasks: Array.isArray(migrated.tasks) ? migrated.tasks : [],
+    theme_index: Number.isFinite(migrated.theme_index) ? migrated.theme_index : 0,
+    last_modified: normalizeLastModified(migrated.last_modified), // Normalize old second-based timestamps
   };
   if (data.theme_index < 0 || data.theme_index >= THEMES.length) {
     data.theme_index = 0;
