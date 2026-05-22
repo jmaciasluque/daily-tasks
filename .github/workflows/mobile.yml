@@ -44,13 +44,18 @@ jobs:
           TEST_EXIT=${PIPESTATUS[0]}
           set -e
 
-          PASSED="$(grep -cE '^\s*[0-9]+ passed' test.log || true)"
-          FAILED="$(grep -cE '^\s*[0-9]+ failed' test.log || true)"
-          SKIPPED="$(grep -cE '^\s*[0-9]+ skipped' test.log || true)"
+          TESTS_LINE="$(grep -E '^Tests:' test.log | tail -1)"
+          PASSED="$(echo "$TESTS_LINE" | grep -oE '[0-9]+ passed' | grep -oE '^[0-9]+' || echo 0)"
+          FAILED="$(echo "$TESTS_LINE" | grep -oE '[0-9]+ failed' | grep -oE '^[0-9]+' || echo 0)"
+          SKIPPED="$(echo "$TESTS_LINE" | grep -oE '[0-9]+ skipped' | grep -oE '^[0-9]+' || echo 0)"
+
+          if [ "$TEST_EXIT" -ne 0 ] && [ "$FAILED" -eq 0 ]; then
+            FAILED=1
+          fi
 
           COVERAGE="unavailable"
           if grep -q 'All files' test.log; then
-            COVERAGE="$(grep 'All files' test.log | awk '{print $4}')"
+            COVERAGE="$(grep 'All files' test.log | awk '{print $4}')%"
           fi
 
           echo "Tests passed: ${PASSED}"
@@ -64,6 +69,12 @@ jobs:
             echo "coverage=${COVERAGE}"
             echo "exit_code=${TEST_EXIT}"
           } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "### Mobile test summary"
+            echo "- Tests: ${PASSED} passed, ${FAILED} failed"
+            echo "- Coverage: ${COVERAGE}"
+          } >> "$GITHUB_STEP_SUMMARY"
 
           exit "$TEST_EXIT"
 
