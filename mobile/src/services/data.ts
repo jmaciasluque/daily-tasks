@@ -66,6 +66,12 @@ export function assignMissingOrders(data: Data): void {
   });
 }
 
+export function isAM(deadline: string): boolean {
+  if (deadline.length < 5) return false;
+  const h = parseInt(deadline.slice(0, 2), 10);
+  return !isNaN(h) && h < 12;
+}
+
 export function isVisibleToday(task: Task): boolean {
   if (!task.visibility || task.visibility.length === 0) return true;
   return task.visibility.includes(new Date().getDay());
