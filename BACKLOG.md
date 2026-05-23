@@ -2,7 +2,13 @@
 
 This file mirrors GitHub issues for agent-friendly scanning. Use issues for discussion and tracking.
 
-## Core architecture
+## Hosted backend (Fly.io)
+- [ ] #97 Define hosted backend architecture (Fly.io + Postgres + OAuth2) (labels: backend, architecture)
+- [ ] #98 Implement hosted API server on Fly.io (labels: backend, architecture)
+- [ ] #99 CLI: add hosted backend support (labels: cli, backend, configuration)
+- [ ] #100 Mobile: add hosted backend OAuth login and sync (labels: mobile, backend, configuration)
+
+
 - [x] #5 Define multi-backend interface and sync contract (labels: backend, architecture)
 - [ ] #6 Add backend registry for additional backend types (labels: backend, configuration)
 - [x] #7 Persist backend selection across clients (labels: backend, configuration, ui)
