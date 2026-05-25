@@ -1,0 +1,27 @@
+app = "daily-tasks-api"
+primary_region = "cdg"  # Paris — closest available Fly.io region to Spain
+
+[build]
+  dockerfile = "Dockerfile"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # OAuth state is currently kept in-process for the single-machine deployment;
+  # keep one machine warm so login redirects cannot lose state between consent and callback.
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "connections"
+    hard_limit = 25
+    soft_limit = 20
+
+[[vm]]
+  memory = "256mb"
+  cpu_kind = "shared"
+  cpus = 1
+
+[env]
+  PORT = "8080"
