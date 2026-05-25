@@ -142,6 +142,10 @@ func runNonTUI(args []string) (bool, error) {
 		return true, runStats(cmdArgs)
 	case "setup":
 		return true, runSetup(cmdArgs)
+	case "login":
+		return true, runLogin(cmdArgs)
+	case "logout":
+		return true, runLogout(cmdArgs)
 	case "web":
 		return true, runWeb(cmdArgs)
 	default:
@@ -165,6 +169,8 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  push             Force push local data")
 	fmt.Fprintln(w, "  stats            Show historical stats")
 	fmt.Fprintln(w, "  setup            Choose backend and connect Nextcloud")
+	fmt.Fprintln(w, "  login            Configure hosted backend token")
+	fmt.Fprintln(w, "  logout           Delete hosted backend token")
 	fmt.Fprintln(w, "  web              Serve the local web app")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Run with --help after a command to see command options.")
@@ -208,6 +214,15 @@ func printWebUsage(w io.Writer) {
 
 func printSetupUsage(w io.Writer) {
 	fmt.Fprintln(w, "Usage: daily-tasks setup")
+}
+
+func printLoginUsage(w io.Writer) {
+	fmt.Fprintln(w, "Usage: daily-tasks login [--provider google|facebook] [--api-url URL] [--token JWT]")
+	fmt.Fprintln(w, "If --token is omitted, open the printed login URL and paste the returned token with --token.")
+}
+
+func printLogoutUsage(w io.Writer) {
+	fmt.Fprintln(w, "Usage: daily-tasks logout")
 }
 
 func runList(args []string) error {
@@ -459,11 +474,11 @@ func runSync(args []string) error {
 	}
 	_ = reset
 
-	backend, err := internal.LoadWebDAVBackend()
+	backend, err := internal.LoadRemoteBackend()
 	if err != nil {
 		return err
 	}
-	if internal.LocalPathInNextcloudSyncFolder(path) {
+	if _, ok := backend.(*internal.WebDAVBackend); ok && internal.LocalPathInNextcloudSyncFolder(path) {
 		fmt.Println("Desktop client is syncing this folder; skipped WebDAV sync")
 		return nil
 	}
@@ -505,11 +520,11 @@ func runPush(args []string) error {
 	}
 	_ = reset
 
-	backend, err := internal.LoadWebDAVBackend()
+	backend, err := internal.LoadRemoteBackend()
 	if err != nil {
 		return err
 	}
-	if internal.LocalPathInNextcloudSyncFolder(path) {
+	if _, ok := backend.(*internal.WebDAVBackend); ok && internal.LocalPathInNextcloudSyncFolder(path) {
 		fmt.Println("Desktop client is syncing this folder; skipped WebDAV push")
 		return nil
 	}
@@ -598,6 +613,79 @@ func runSetup(args []string) error {
 		return errors.New("setup does not take any arguments")
 	}
 	return internal.RunSetupTUI()
+}
+
+func runLogin(args []string) error {
+	if wantsHelp(args) {
+		printLoginUsage(os.Stdout)
+		return nil
+	}
+	fs := flag.NewFlagSet("login", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	provider := fs.String("provider", "facebook", "google|facebook")
+	apiURL := fs.String("api-url", internal.DefaultHostedAPIURL, "hosted API URL")
+	token := fs.String("token", "", "JWT returned by hosted login")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() > 0 {
+		return errors.New("login does not take positional arguments")
+	}
+
+	normalizedAPIURL := internal.NormalizeServerURL(*apiURL)
+	if normalizedAPIURL == "" {
+		normalizedAPIURL = internal.DefaultHostedAPIURL
+	}
+	providerValue := strings.ToLower(strings.TrimSpace(*provider))
+	if providerValue != "google" && providerValue != "facebook" {
+		return errors.New("provider must be google or facebook")
+	}
+
+	cfgPath, err := internal.DefaultConfigPath()
+	if err != nil {
+		return err
+	}
+	if err := internal.SaveAppConfig(cfgPath, internal.AppConfig{
+		Backend: internal.BackendHosted,
+		Hosted:  internal.HostedConfig{APIURL: normalizedAPIURL},
+	}); err != nil {
+		return err
+	}
+
+	tokenValue := strings.TrimSpace(*token)
+	if tokenValue == "" {
+		fmt.Printf("Open this URL to log in:\n%s/auth/%s\n", normalizedAPIURL, providerValue)
+		fmt.Println("Then rerun: daily-tasks login --token <jwt>")
+		return nil
+	}
+	tokenPath, err := internal.DefaultHostedTokenPath()
+	if err != nil {
+		return err
+	}
+	if err := internal.SaveHostedToken(tokenPath, tokenValue); err != nil {
+		return err
+	}
+	fmt.Println("Hosted backend configured")
+	return nil
+}
+
+func runLogout(args []string) error {
+	if wantsHelp(args) {
+		printLogoutUsage(os.Stdout)
+		return nil
+	}
+	if len(args) > 0 {
+		return errors.New("logout does not take any arguments")
+	}
+	tokenPath, err := internal.DefaultHostedTokenPath()
+	if err != nil {
+		return err
+	}
+	if err := internal.DeleteHostedToken(tokenPath); err != nil {
+		return err
+	}
+	fmt.Println("Logged out of hosted backend")
+	return nil
 }
 
 func loadDataAndReset() (internal.Data, string, bool, error) {

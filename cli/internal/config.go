@@ -15,7 +15,10 @@ const (
 	BackendUnconfigured BackendKind = ""
 	BackendLocal        BackendKind = "local"
 	BackendNextcloud    BackendKind = "nextcloud"
+	BackendHosted       BackendKind = "hosted"
 )
+
+const DefaultHostedAPIURL = "https://daily-tasks-api.fly.dev"
 
 var ErrBackendNotConfigured = errors.New("daily-tasks backend is not configured")
 var ErrNextcloudNotConfigured = errors.New("nextcloud backend is not configured")
@@ -27,9 +30,14 @@ type NextcloudConfig struct {
 	RemotePath  string `json:"remote_path,omitempty"`
 }
 
+type HostedConfig struct {
+	APIURL string `json:"api_url,omitempty"`
+}
+
 type AppConfig struct {
 	Backend   BackendKind     `json:"backend,omitempty"`
 	Nextcloud NextcloudConfig `json:"nextcloud,omitempty"`
+	Hosted    HostedConfig    `json:"hosted,omitempty"`
 }
 
 func DefaultConfigPath() (string, error) {
@@ -73,6 +81,7 @@ func NormalizeAppConfig(cfg AppConfig) AppConfig {
 	cfg.Nextcloud.LoginName = strings.TrimSpace(cfg.Nextcloud.LoginName)
 	cfg.Nextcloud.AppPassword = strings.TrimSpace(cfg.Nextcloud.AppPassword)
 	cfg.Nextcloud.RemotePath = strings.TrimSpace(cfg.Nextcloud.RemotePath)
+	cfg.Hosted.APIURL = NormalizeServerURL(cfg.Hosted.APIURL)
 	if cfg.Nextcloud.RemotePath == "" && cfg.Nextcloud.LoginName != "" {
 		cfg.Nextcloud.RemotePath = DefaultRemotePath(cfg.Nextcloud.LoginName)
 	}
@@ -80,11 +89,19 @@ func NormalizeAppConfig(cfg AppConfig) AppConfig {
 	switch cfg.Backend {
 	case BackendLocal:
 		cfg.Nextcloud = NextcloudConfig{}
+		cfg.Hosted = HostedConfig{}
 	case BackendNextcloud:
+		cfg.Hosted = HostedConfig{}
 		// keep nextcloud config as normalized above
+	case BackendHosted:
+		cfg.Nextcloud = NextcloudConfig{}
+		if cfg.Hosted.APIURL == "" {
+			cfg.Hosted.APIURL = DefaultHostedAPIURL
+		}
 	default:
 		cfg.Backend = BackendUnconfigured
 		cfg.Nextcloud = NextcloudConfig{}
+		cfg.Hosted = HostedConfig{}
 	}
 
 	return cfg
@@ -140,6 +157,8 @@ func IsBackendConfigured(cfg AppConfig) bool {
 		return true
 	case BackendNextcloud:
 		return nextcloudConfigComplete(cfg.Nextcloud)
+	case BackendHosted:
+		return strings.TrimSpace(cfg.Hosted.APIURL) != ""
 	default:
 		return false
 	}
