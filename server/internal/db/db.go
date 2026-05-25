@@ -45,6 +45,8 @@ func Open() (*sql.DB, error) {
 // Migrate runs the embedded SQL migrations.
 func Migrate(db *sql.DB) error {
 	_, err := db.Exec(`
+		CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 		CREATE TABLE IF NOT EXISTS users (
 			id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 			provider   TEXT NOT NULL,

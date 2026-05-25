@@ -2,11 +2,14 @@ package auth
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -144,22 +147,35 @@ func BearerToken(header string) (string, error) {
 	return header[len(prefix):], nil
 }
 
-// stateStore is a naive in-process state store (sufficient for single-instance Fly.io deployment).
-// For multi-instance, replace with a Redis or DB-backed store.
-var stateStore = map[string]time.Time{}
+// stateStore keeps one-time OAuth state values for the single-machine Fly.io deployment.
+// For multi-instance deployment, replace with a Redis or DB-backed store.
+var stateStore = struct {
+	sync.Mutex
+	values map[string]time.Time
+}{values: map[string]time.Time{}}
 
 func NewOAuthState() string {
-	state := fmt.Sprintf("%d", time.Now().UnixNano())
-	stateStore[state] = time.Now().Add(10 * time.Minute)
+	raw := make([]byte, 32)
+	if _, err := rand.Read(raw); err != nil {
+		panic(fmt.Sprintf("oauth state entropy: %v", err))
+	}
+	state := base64.RawURLEncoding.EncodeToString(raw)
+	stateStore.Lock()
+	stateStore.values[state] = time.Now().Add(10 * time.Minute)
+	stateStore.Unlock()
 	return state
 }
 
 func ValidateOAuthState(state string) error {
-	exp, ok := stateStore[state]
+	stateStore.Lock()
+	exp, ok := stateStore.values[state]
+	if ok {
+		delete(stateStore.values, state)
+	}
+	stateStore.Unlock()
 	if !ok {
 		return fmt.Errorf("unknown oauth state")
 	}
-	delete(stateStore, state)
 	if time.Now().After(exp) {
 		return fmt.Errorf("oauth state expired")
 	}

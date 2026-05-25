@@ -1,5 +1,7 @@
 -- Migration 001: initial schema
 
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 CREATE TABLE IF NOT EXISTS users (
     id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     provider   TEXT NOT NULL,

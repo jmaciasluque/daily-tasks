@@ -174,6 +174,7 @@ func (s *Server) PutSync(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1 MiB is plenty for the daily-tasks JSON blobs.
 	var req syncRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		auth.JSONError(w, "invalid body", http.StatusBadRequest)

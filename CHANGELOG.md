@@ -10,6 +10,26 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 
 ---
 
+## [0.12.0] - 2026-05-25
+
+### Added
+- Hosted backend API server under `server/` with Google/Facebook OAuth entry points,
+  JWT-protected sync endpoints, encrypted Postgres storage, Docker build, and Fly.io
+  deployment configuration.
+- GitHub Actions workflow to deploy the server to Fly.io on `main` changes under
+  `server/**`.
+
+### Changed
+- Fly.io server config keeps one machine warm for the single-instance OAuth flow.
+
+### Security
+- Added random one-time OAuth state values, HTTP server timeouts, sync request body
+  size limits, and `pgcrypto` migration setup for UUID generation.
+
+Closes #98.
+
+---
+
 ## [0.11.4] - 2026-05-22
 
 ### Added
