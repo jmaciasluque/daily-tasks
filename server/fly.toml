@@ -1,5 +1,5 @@
 app = "daily-tasks-api"
-primary_region = "mad"  # Madrid — closest free Fly.io region to Spain
+primary_region = "cdg"  # Paris — closest available Fly.io region to Spain
 
 [build]
   dockerfile = "Dockerfile"
