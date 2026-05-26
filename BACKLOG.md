@@ -5,7 +5,7 @@ This file mirrors GitHub issues for agent-friendly scanning. Use issues for disc
 ## Hosted backend (Fly.io)
 - [ ] #97 Define hosted backend architecture (Fly.io + Postgres + OAuth2) (labels: backend, architecture)
 - [x] #98 Implement hosted API server on Fly.io (labels: backend, architecture)
-- [ ] #99 CLI: add hosted backend support (labels: cli, backend, configuration) — initial token-based CLI sync support in progress; browser callback flow still pending
+- [x] #99 CLI: add hosted backend support (labels: cli, backend, configuration)
 - [ ] #100 Mobile: add hosted backend OAuth login and sync (labels: mobile, backend, configuration)
 
 
