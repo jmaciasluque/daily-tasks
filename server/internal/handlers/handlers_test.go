@@ -155,5 +155,32 @@ func TestSyncResponseEncoding(t *testing.T) {
 	}
 }
 
+func TestSyncPreconditions(t *testing.T) {
+	cases := []struct {
+		name        string
+		ifMatch     string
+		ifNoneMatch string
+		current     string
+		exists      bool
+		want        bool
+	}{
+		{name: "unconditional create", current: emptySyncETag, exists: false, want: true},
+		{name: "empty etag allows create only while absent", ifMatch: emptySyncETag, current: emptySyncETag, exists: false, want: true},
+		{name: "empty etag rejects after create", ifMatch: emptySyncETag, current: `"sync-1"`, exists: true, want: false},
+		{name: "matching etag allows update", ifMatch: `"sync-1"`, current: `"sync-1"`, exists: true, want: true},
+		{name: "stale etag rejects update", ifMatch: `"sync-0"`, current: `"sync-1"`, exists: true, want: false},
+		{name: "if none match star allows create", ifNoneMatch: "*", current: emptySyncETag, exists: false, want: true},
+		{name: "if none match star rejects existing", ifNoneMatch: "*", current: `"sync-1"`, exists: true, want: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := syncPreconditionsOK(tc.ifMatch, tc.ifNoneMatch, tc.current, tc.exists)
+			if got != tc.want {
+				t.Fatalf("syncPreconditionsOK() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 // Compile-time check: sql.DB is used in the Server struct.
 var _ *sql.DB = (*sql.DB)(nil)

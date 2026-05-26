@@ -1343,7 +1343,7 @@ func (m *model) moveTaskToCol(targetCol int) (bool, int) {
 
 func syncRemoteCmd(dataPath string, localData internal.Data) tea.Cmd {
 	return func() tea.Msg {
-		backend, err := internal.LoadWebDAVBackend()
+		backend, err := internal.LoadRemoteBackend()
 		if err != nil {
 			return syncResultMsg{result: internal.SyncStateResult{
 				Data:    localData,
@@ -1351,7 +1351,7 @@ func syncRemoteCmd(dataPath string, localData internal.Data) tea.Cmd {
 				Message: err.Error(),
 			}}
 		}
-		if internal.LocalPathInNextcloudSyncFolder(dataPath) {
+		if _, ok := backend.(*internal.WebDAVBackend); ok && internal.LocalPathInNextcloudSyncFolder(dataPath) {
 			return syncResultMsg{result: internal.SyncStateResult{
 				Data:    localData,
 				Action:  "in_sync",
@@ -1373,11 +1373,11 @@ func syncRemoteCmd(dataPath string, localData internal.Data) tea.Cmd {
 
 func pushRemoteCmd(dataPath string, data internal.Data) tea.Cmd {
 	return func() tea.Msg {
-		backend, err := internal.LoadWebDAVBackend()
+		backend, err := internal.LoadRemoteBackend()
 		if err != nil {
 			return pushResultMsg{err: err}
 		}
-		if internal.LocalPathInNextcloudSyncFolder(dataPath) {
+		if _, ok := backend.(*internal.WebDAVBackend); ok && internal.LocalPathInNextcloudSyncFolder(dataPath) {
 			return pushResultMsg{err: internal.ErrWebDAVHandledByDesktopClient}
 		}
 		history, historyErr := internal.LoadHistory(dataPath)

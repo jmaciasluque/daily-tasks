@@ -30,6 +30,59 @@ func setupCLIEnv(t *testing.T) (dataPath, configPath string) {
 // parseVisibility
 // ---------------------------------------------------------------------------
 
+func TestLoginTokenCommandStoresTokenAndHostedConfig(t *testing.T) {
+	dir := t.TempDir()
+	configPath := dir + "/config.json"
+	tokenPath := dir + "/token"
+	t.Setenv("DAILY_TASKS_CONFIG", configPath)
+	t.Setenv("DAILY_TASKS_TOKEN", tokenPath)
+
+	handled, err := runNonTUI([]string{"login", "--token", "jwt-token", "--api-url", "https://api.example.com/"})
+	if err != nil {
+		t.Fatalf("login command: %v", err)
+	}
+	if !handled {
+		t.Fatal("login command was not handled")
+	}
+
+	cfg, err := internal.LoadAppConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadAppConfig: %v", err)
+	}
+	if cfg.Backend != internal.BackendHosted || cfg.Hosted.APIURL != "https://api.example.com" {
+		t.Fatalf("config = %+v", cfg)
+	}
+	token, err := internal.LoadHostedToken(tokenPath)
+	if err != nil {
+		t.Fatalf("LoadHostedToken: %v", err)
+	}
+	if token != "jwt-token" {
+		t.Fatalf("token = %q", token)
+	}
+}
+
+func TestLogoutDeletesHostedToken(t *testing.T) {
+	dir := t.TempDir()
+	configPath := dir + "/config.json"
+	tokenPath := dir + "/token"
+	t.Setenv("DAILY_TASKS_CONFIG", configPath)
+	t.Setenv("DAILY_TASKS_TOKEN", tokenPath)
+	if err := internal.SaveHostedToken(tokenPath, "jwt-token"); err != nil {
+		t.Fatalf("SaveHostedToken: %v", err)
+	}
+
+	handled, err := runNonTUI([]string{"logout"})
+	if err != nil {
+		t.Fatalf("logout command: %v", err)
+	}
+	if !handled {
+		t.Fatal("logout command was not handled")
+	}
+	if _, err := os.Stat(tokenPath); !os.IsNotExist(err) {
+		t.Fatalf("expected token to be deleted, stat err=%v", err)
+	}
+}
+
 func TestParseVisibilityEmpty(t *testing.T) {
 	got, err := parseVisibility("")
 	if err != nil || got != nil {

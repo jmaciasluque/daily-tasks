@@ -1,11 +1,15 @@
 package handlers
 
 import (
+	"context"
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"os"
+	"time"
 
 	"daily-tasks-server/internal/auth"
 	"daily-tasks-server/internal/crypto"
@@ -38,6 +42,27 @@ func NewServer(database *sql.DB) (*Server, error) {
 type validationError struct{ msg string }
 
 func (e *validationError) Error() string { return e.msg }
+
+var errSyncPreconditionFailed = errors.New("sync precondition failed")
+
+const emptySyncETag = `"empty"`
+
+func syncETag(updatedAt time.Time) string {
+	return fmt.Sprintf(`"sync-%d"`, updatedAt.UTC().UnixNano())
+}
+
+func syncPreconditionsOK(ifMatch, ifNoneMatch, currentETag string, exists bool) bool {
+	if ifNoneMatch == "*" && exists {
+		return false
+	}
+	if ifMatch == "" {
+		return true
+	}
+	if !exists {
+		return ifMatch == emptySyncETag
+	}
+	return ifMatch == currentETag
+}
 
 // Health godoc
 // GET /health
@@ -138,6 +163,7 @@ func (s *Server) GetSync(w http.ResponseWriter, r *http.Request) {
 	if ud == nil {
 		// No data yet — return empty JSON objects so clients can bootstrap.
 		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("ETag", emptySyncETag)
 		json.NewEncoder(w).Encode(syncResponse{
 			Data:    base64.StdEncoding.EncodeToString([]byte("{}")),
 			History: base64.StdEncoding.EncodeToString([]byte("{}")),
@@ -160,6 +186,7 @@ func (s *Server) GetSync(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("ETag", syncETag(ud.UpdatedAt))
 	json.NewEncoder(w).Encode(syncResponse{
 		Data:      base64.StdEncoding.EncodeToString(dataPlain),
 		History:   base64.StdEncoding.EncodeToString(histPlain),
@@ -205,13 +232,79 @@ func (s *Server) PutSync(w http.ResponseWriter, r *http.Request) {
 		auth.JSONError(w, "encrypt error", http.StatusInternalServerError)
 		return
 	}
-	if err := db.PutUserData(s.DB, userID, dataCipher, histCipher); err != nil {
+	newETag, err := s.putUserDataWithPreconditions(
+		r.Context(),
+		userID,
+		dataCipher,
+		histCipher,
+		r.Header.Get("If-Match"),
+		r.Header.Get("If-None-Match"),
+	)
+	if errors.Is(err, errSyncPreconditionFailed) {
+		auth.JSONError(w, "sync precondition failed", http.StatusPreconditionFailed)
+		return
+	}
+	if err != nil {
 		auth.JSONError(w, "db error", http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("ETag", newETag)
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(`{"status":"ok"}`))
+}
+
+func (s *Server) putUserDataWithPreconditions(ctx context.Context, userID string, dataCipher, histCipher []byte, ifMatch, ifNoneMatch string) (string, error) {
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`, userID); err != nil {
+		return "", err
+	}
+
+	var updatedAt time.Time
+	err = tx.QueryRowContext(ctx, `
+		SELECT updated_at FROM user_data WHERE user_id = $1 FOR UPDATE
+	`, userID).Scan(&updatedAt)
+	exists := true
+	currentETag := ""
+	if errors.Is(err, sql.ErrNoRows) {
+		exists = false
+		currentETag = emptySyncETag
+	} else if err != nil {
+		return "", err
+	} else {
+		currentETag = syncETag(updatedAt)
+	}
+
+	if !syncPreconditionsOK(ifMatch, ifNoneMatch, currentETag, exists) {
+		return "", errSyncPreconditionFailed
+	}
+
+	if exists {
+		err = tx.QueryRowContext(ctx, `
+			UPDATE user_data
+			SET data = $2, history = $3, updated_at = now()
+			WHERE user_id = $1
+			RETURNING updated_at
+		`, userID, dataCipher, histCipher).Scan(&updatedAt)
+	} else {
+		err = tx.QueryRowContext(ctx, `
+			INSERT INTO user_data (user_id, data, history, updated_at)
+			VALUES ($1, $2, $3, now())
+			RETURNING updated_at
+		`, userID, dataCipher, histCipher).Scan(&updatedAt)
+	}
+	if err != nil {
+		return "", err
+	}
+	if err := tx.Commit(); err != nil {
+		return "", err
+	}
+	return syncETag(updatedAt), nil
 }
 
 // requireAuth validates the Bearer JWT and returns the userID, or writes an error and returns false.

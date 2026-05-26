@@ -10,6 +10,25 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 
 ---
 
+## [0.13.0] - 2026-05-25
+
+### Added
+- CLI hosted backend config support with `backend: hosted` and configurable
+  `hosted.api_url` defaulting to the Fly.io API.
+- Hosted HTTP sync backend for `GET/PUT /api/v1/sync` using bearer-token auth,
+  server ETags/precondition headers, and base64 payload translation into the
+  existing `Backend` abstraction.
+- `daily-tasks login --token <jwt>` and `daily-tasks logout` commands for storing
+  and deleting hosted JWTs with `0600` token-file permissions.
+
+### Changed
+- CLI and TUI remote sync/push now load the configured remote backend instead of
+  being hard-wired to WebDAV/Nextcloud.
+
+Refs #99.
+
+---
+
 ## [0.12.0] - 2026-05-25
 
 ### Added

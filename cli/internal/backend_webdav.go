@@ -2,7 +2,6 @@ package internal
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -164,12 +163,41 @@ func LoadWebDAVBackend() (*WebDAVBackend, error) {
 	), nil
 }
 
+func LoadRemoteBackend() (Backend, error) {
+	cfg, _, err := LoadEffectiveAppConfig()
+	if err != nil {
+		return nil, err
+	}
+	switch cfg.Backend {
+	case BackendNextcloud:
+		if !nextcloudConfigComplete(cfg.Nextcloud) {
+			return nil, ErrNextcloudNotConfigured
+		}
+		return NewWebDAVBackend(
+			buildWebDAVURL(cfg.Nextcloud),
+			cfg.Nextcloud.LoginName,
+			cfg.Nextcloud.AppPassword,
+		), nil
+	case BackendHosted:
+		tokenPath, err := DefaultHostedTokenPath()
+		if err != nil {
+			return nil, err
+		}
+		token, err := LoadHostedToken(tokenPath)
+		if err != nil || token == "" {
+			return nil, ErrHostedTokenMissing
+		}
+		return NewHostedBackend(cfg.Hosted.APIURL, token), nil
+	default:
+		return nil, ErrBackendNotConfigured
+	}
+}
+
 // HasBackendConfig reports whether a remote backend is configured and
-// ready to use. Today this is true only for fully-configured Nextcloud;
-// future backends will also count.
+// ready to use.
 func HasBackendConfig() bool {
-	_, err := LoadWebDAVBackend()
-	return err == nil && !errors.Is(err, ErrNextcloudNotConfigured)
+	_, err := LoadRemoteBackend()
+	return err == nil
 }
 
 func buildWebDAVURL(cfg NextcloudConfig) string {

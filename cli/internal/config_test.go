@@ -53,6 +53,29 @@ func TestNormalizeAppConfigClearsLocalNextcloudState(t *testing.T) {
 	}
 }
 
+func TestNormalizeAppConfigHostedDefaultsAPIURLAndClearsNextcloud(t *testing.T) {
+	cfg := NormalizeAppConfig(AppConfig{
+		Backend: BackendHosted,
+		Hosted:  HostedConfig{APIURL: ""},
+		Nextcloud: NextcloudConfig{
+			ServerURL:   "https://cloud.example.com",
+			LoginName:   "user",
+			AppPassword: "secret",
+			RemotePath:  "/remote.php/dav/files/user/.daily-tasks.json",
+		},
+	})
+
+	if cfg.Hosted.APIURL != DefaultHostedAPIURL {
+		t.Fatalf("expected default hosted API URL %q, got %q", DefaultHostedAPIURL, cfg.Hosted.APIURL)
+	}
+	if cfg.Nextcloud.ServerURL != "" || cfg.Nextcloud.LoginName != "" || cfg.Nextcloud.AppPassword != "" || cfg.Nextcloud.RemotePath != "" {
+		t.Fatalf("expected hosted backend to clear Nextcloud config, got %+v", cfg.Nextcloud)
+	}
+	if !IsBackendConfigured(cfg) {
+		t.Fatal("expected hosted backend with default API URL to be configured")
+	}
+}
+
 func TestLoadLegacyWebDAVConfigFromEnv(t *testing.T) {
 	t.Setenv("DAILY_TASKS_WEBDAV_URL", "https://cloud.example.com/remote.php/dav/files/user/.daily-tasks.json")
 	t.Setenv("DAILY_TASKS_WEBDAV_USER", "user")
