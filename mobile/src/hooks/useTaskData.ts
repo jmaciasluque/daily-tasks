@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { AppConfig, Data, History, Settings, Task, TaskStatus } from '../types';
+import type { AppConfig, Data, History, HostedSettings, Settings, Task, TaskStatus } from '../types';
 import { emptyData, normalizeData, resetIfNeeded, nextOrder } from '../services/data';
 import { applyDailyResetWithHistory, emptyHistory, normalizeHistory, recordDataChange } from '../services/history';
 import {
@@ -259,6 +259,15 @@ export function useTaskData() {
     }
   }, [syncFromRemote]);
 
+  const saveHostedSettings = useCallback(async (hosted: HostedSettings) => {
+    const nextConfig: AppConfig = {
+      backend: 'hosted',
+      hosted,
+    };
+    setConfigState(nextConfig);
+    await saveAppConfig(nextConfig);
+  }, []);
+
   return {
     data,
     history,
@@ -279,5 +288,6 @@ export function useTaskData() {
     cycleTheme,
     chooseLocalBackend,
     saveNextcloudSettings,
+    saveHostedSettings,
   };
 }

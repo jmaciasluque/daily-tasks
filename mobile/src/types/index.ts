@@ -100,9 +100,16 @@ export type Settings = {
   remotePath: string;
 };
 
-export type BackendType = 'local' | 'nextcloud';
+export type HostedSettings = {
+  apiUrl: string;
+  token?: string;
+  email?: string;
+};
+
+export type BackendType = 'local' | 'nextcloud' | 'hosted';
 
 export type AppConfig = {
   backend?: BackendType;
   nextcloud?: Settings;
+  hosted?: HostedSettings;
 };

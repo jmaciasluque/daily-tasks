@@ -23,6 +23,9 @@ type Props = {
   onStartNextcloud: () => void;
   onOpenNextcloud: () => void;
   onFinishNextcloud: () => void;
+  onStartHostedGoogle: () => void;
+  onStartHostedFacebook: () => void;
+  onHostedLogout: () => void;
   onRestartForUpdate: () => void;
   onClose: () => void;
 };
@@ -47,10 +50,14 @@ export function SettingsModal({
   onStartNextcloud,
   onOpenNextcloud,
   onFinishNextcloud,
+  onStartHostedGoogle,
+  onStartHostedFacebook,
+  onHostedLogout,
   onRestartForUpdate,
   onClose,
 }: Props) {
   const nextcloudConfig = config.backend === 'nextcloud' ? config.nextcloud : undefined;
+  const hostedConfig = config.backend === 'hosted' ? config.hosted : undefined;
   const versionLabel = `${appVersion}${appVariant !== 'production' && appVersionSuffix ? `-${appVersionSuffix.slice(0, 7)}` : ''}`;
 
   return (
@@ -63,7 +70,9 @@ export function SettingsModal({
             <Text style={[styles.copy, { color: theme.muted }]}>
               {config.backend === 'local'
                 ? 'This installation is currently using local-only storage.'
-                : 'This installation is currently connected to Nextcloud.'}
+                : config.backend === 'hosted'
+                  ? 'This installation is currently connected to the hosted backend.'
+                  : 'This installation is currently connected to Nextcloud.'}
             </Text>
 
             {nextcloudConfig ? (
@@ -74,6 +83,35 @@ export function SettingsModal({
                 <Text style={{ color: theme.text }}>{nextcloudConfig.username}</Text>
               </View>
             ) : null}
+
+            {hostedConfig ? (
+              <View style={[styles.summary, { borderColor: theme.border }]}>
+                <Text style={[styles.summaryLabel, { color: theme.muted }]}>Hosted API</Text>
+                <Text style={{ color: theme.text }}>{hostedConfig.apiUrl}</Text>
+                <Text style={[styles.summaryLabel, { color: theme.muted }]}>Account</Text>
+                <Text style={{ color: theme.text }}>{hostedConfig.email || 'Connected'}</Text>
+                <Pressable onPress={onHostedLogout} style={[styles.secondaryButton, { borderColor: theme.border }]}>
+                  <Text style={{ color: theme.text }}>Sign out</Text>
+                </Pressable>
+              </View>
+            ) : null}
+
+            <Pressable
+              onPress={onStartHostedGoogle}
+              style={[styles.primaryButton, { backgroundColor: theme.accent, opacity: busy ? 0.7 : 1 }]}
+              disabled={busy}
+            >
+              <Text style={styles.primaryButtonText}>Sign in with Google</Text>
+            </Pressable>
+            <Pressable
+              onPress={onStartHostedFacebook}
+              style={[styles.secondaryButton, { borderColor: theme.border, opacity: busy ? 0.7 : 1 }]}
+              disabled={busy}
+            >
+              <Text style={{ color: theme.text }}>Sign in with Facebook</Text>
+            </Pressable>
+
+            <View style={[styles.divider, { borderTopColor: theme.border }]} />
 
             <TextInput
               placeholder="https://cloud.example.com"
@@ -120,7 +158,7 @@ export function SettingsModal({
 
             <Text style={[styles.sectionLabel, { color: theme.muted }]}>Status</Text>
             <Text style={[styles.status, { color: theme.muted }]}>
-              Backend: {config.backend === 'nextcloud' ? 'Nextcloud' : 'Local only'}
+              Backend: {config.backend === 'hosted' ? 'Hosted' : config.backend === 'nextcloud' ? 'Nextcloud' : 'Local only'}
             </Text>
             {statusMsg ? <Text style={[styles.status, { color: theme.muted }]}>{statusMsg}</Text> : null}
 

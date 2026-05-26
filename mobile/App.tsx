@@ -23,9 +23,10 @@ import { isAM, isVisibleToday, orderedAllTasks, orderedTasks } from './src/servi
 import { buildStatsSummary } from './src/services/history';
 import { setupNotifications, handleNotificationAction } from './src/services/notifications';
 import { pollNextcloudLogin, startNextcloudLogin, type LoginFlowSession } from './src/services/backend_webdav';
+import { startHostedLogin, type HostedProvider } from './src/services/backend_hosted';
 import { getTheme, isLightColor } from './src/theme/themes';
 import type { Task, TaskStatus } from './src/types';
-import { appVariant, appVersionSuffix, appVersion, commitHash } from './src/config/env';
+import { appVariant, appVersionSuffix, appVersion, commitHash, hostedApiUrl } from './src/config/env';
 import type { StatsPeriod } from './src/components/StatsScreen';
 
 const updateId = Updates.updateId ? Updates.updateId.slice(0, 7) : 'bundled';
@@ -73,6 +74,7 @@ export default function App() {
     cycleTheme,
     chooseLocalBackend,
     saveNextcloudSettings,
+    saveHostedSettings,
   } = useTaskData();
 
   const [screen, setScreen] = useState<Screen>('tasks');
@@ -221,6 +223,24 @@ export default function App() {
     }
   }, [loginSession, saveNextcloudSettings]);
 
+  const handleHostedLogin = useCallback(async (provider: HostedProvider) => {
+    setBackendBusy(true);
+    try {
+      const result = await startHostedLogin(provider);
+      await saveHostedSettings({ apiUrl: hostedApiUrl, token: result.token, email: result.email });
+      setLoginSession(null);
+      setIsSettingsOpen(false);
+    } catch (err) {
+      Alert.alert('Hosted login error', (err as Error).message);
+    } finally {
+      setBackendBusy(false);
+    }
+  }, [saveHostedSettings]);
+
+  const handleHostedLogout = useCallback(async () => {
+    await handleChooseLocalBackend();
+  }, [handleChooseLocalBackend]);
+
   const openAdd = () => {
     setEditingTask(null);
     setIsEditorOpen(true);
@@ -275,6 +295,22 @@ export default function App() {
           disabled={backendBusy}
         >
           <Text style={{ color: theme.text }}>Use Local Only</Text>
+        </Pressable>
+
+        <Text style={[styles.setupLabel, { color: theme.muted }]}>Hosted Sync</Text>
+        <Pressable
+          onPress={() => handleHostedLogin('google')}
+          style={[styles.primaryButton, { backgroundColor: theme.accent, opacity: backendBusy ? 0.7 : 1 }]}
+          disabled={backendBusy}
+        >
+          <Text style={styles.primaryButtonText}>Sign in with Google</Text>
+        </Pressable>
+        <Pressable
+          onPress={() => handleHostedLogin('facebook')}
+          style={[styles.secondaryButton, { borderColor: theme.border, opacity: backendBusy ? 0.7 : 1 }]}
+          disabled={backendBusy}
+        >
+          <Text style={{ color: theme.text }}>Sign in with Facebook</Text>
         </Pressable>
 
         <Text style={[styles.setupLabel, { color: theme.muted }]}>Connect Nextcloud</Text>
@@ -508,6 +544,9 @@ export default function App() {
                 onStartNextcloud={handleStartNextcloudLogin}
                 onOpenNextcloud={handleOpenPendingLogin}
                 onFinishNextcloud={handleFinishNextcloudLogin}
+                onStartHostedGoogle={() => handleHostedLogin('google')}
+                onStartHostedFacebook={() => handleHostedLogin('facebook')}
+                onHostedLogout={handleHostedLogout}
                 onRestartForUpdate={() => Updates.reloadAsync()}
                 onClose={() => setIsSettingsOpen(false)}
               />

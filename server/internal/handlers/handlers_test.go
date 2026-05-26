@@ -182,5 +182,29 @@ func TestSyncPreconditions(t *testing.T) {
 	}
 }
 
+func TestGoogleLoginIncludesRedirectState(t *testing.T) {
+	s := setupTestServer(t)
+	req := httptest.NewRequest(http.MethodGet, "/auth/google?redirect_uri=daily-tasks://auth", nil)
+	w := httptest.NewRecorder()
+	s.GoogleLogin(w, req)
+	if w.Code != http.StatusTemporaryRedirect {
+		t.Fatalf("expected redirect got %d", w.Code)
+	}
+	loc := w.Header().Get("Location")
+	if !strings.Contains(loc, "state=") {
+		t.Fatalf("expected OAuth state in redirect URL, got %q", loc)
+	}
+}
+
+func TestLoginRedirectURLValidation(t *testing.T) {
+	s := setupTestServer(t)
+	if got := s.validLoginRedirect("daily-tasks://auth"); got != "daily-tasks://auth" {
+		t.Fatalf("expected app redirect, got %q", got)
+	}
+	if got := s.validLoginRedirect("https://evil.example/callback"); got != "" {
+		t.Fatalf("expected untrusted redirect to be rejected, got %q", got)
+	}
+}
+
 // Compile-time check: sql.DB is used in the Server struct.
 var _ *sql.DB = (*sql.DB)(nil)

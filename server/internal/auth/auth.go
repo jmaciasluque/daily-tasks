@@ -149,37 +149,51 @@ func BearerToken(header string) (string, error) {
 
 // stateStore keeps one-time OAuth state values for the single-machine Fly.io deployment.
 // For multi-instance deployment, replace with a Redis or DB-backed store.
+type oauthStateValue struct {
+	ExpiresAt   time.Time
+	RedirectURI string
+}
+
 var stateStore = struct {
 	sync.Mutex
-	values map[string]time.Time
-}{values: map[string]time.Time{}}
+	values map[string]oauthStateValue
+}{values: map[string]oauthStateValue{}}
 
 func NewOAuthState() string {
+	return NewOAuthStateWithRedirect("")
+}
+
+func NewOAuthStateWithRedirect(redirectURI string) string {
 	raw := make([]byte, 32)
 	if _, err := rand.Read(raw); err != nil {
 		panic(fmt.Sprintf("oauth state entropy: %v", err))
 	}
 	state := base64.RawURLEncoding.EncodeToString(raw)
 	stateStore.Lock()
-	stateStore.values[state] = time.Now().Add(10 * time.Minute)
+	stateStore.values[state] = oauthStateValue{ExpiresAt: time.Now().Add(10 * time.Minute), RedirectURI: redirectURI}
 	stateStore.Unlock()
 	return state
 }
 
 func ValidateOAuthState(state string) error {
+	_, err := ConsumeOAuthState(state)
+	return err
+}
+
+func ConsumeOAuthState(state string) (string, error) {
 	stateStore.Lock()
-	exp, ok := stateStore.values[state]
+	value, ok := stateStore.values[state]
 	if ok {
 		delete(stateStore.values, state)
 	}
 	stateStore.Unlock()
 	if !ok {
-		return fmt.Errorf("unknown oauth state")
+		return "", fmt.Errorf("unknown oauth state")
 	}
-	if time.Now().After(exp) {
-		return fmt.Errorf("oauth state expired")
+	if time.Now().After(value.ExpiresAt) {
+		return "", fmt.Errorf("oauth state expired")
 	}
-	return nil
+	return value.RedirectURI, nil
 }
 
 // JSONError writes a JSON error response.

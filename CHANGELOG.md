@@ -10,6 +10,22 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 
 ---
 
+## [0.14.0] - 2026-05-26
+
+### Added
+- Mobile hosted backend support with Google/Facebook OAuth via Expo auth session
+  browser flow, secure JWT storage via `expo-secure-store`, and hosted
+  `GET/PUT /api/v1/sync` integration using bearer-token auth.
+- Hosted backend config persistence for mobile using the shared snake_case config
+  schema while keeping JWTs out of AsyncStorage.
+- Settings UI for hosted sign-in, connected account display, and sign-out.
+- Server OAuth login support for mobile `redirect_uri` callbacks that return the
+  hosted JWT and account email to the app deep link.
+
+Closes #100.
+
+---
+
 ## [0.13.0] - 2026-05-25
 
 ### Added

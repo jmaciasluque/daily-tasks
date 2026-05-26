@@ -14,6 +14,9 @@ export const appVariant: AppVariant =
 export const defaultRemotePath: string =
   (updateExtra.defaultRemotePath as string) || (extra.defaultRemotePath as string) || '/remote.php/dav/files/<username>/.daily-tasks.json';
 
+export const hostedApiUrl: string =
+  (updateExtra.hostedApiUrl as string) || (extra.hostedApiUrl as string) || 'https://daily-tasks-api.fly.dev';
+
 export const storagePrefix: string = (updateExtra.storagePrefix as string) || (extra.storagePrefix as string) || 'dailyTasks';
 
 export const appVersionSuffix: string =

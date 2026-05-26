@@ -1,6 +1,16 @@
 jest.mock('../config/env', () => ({
   storagePrefix: 'dailyTasks',
   defaultRemotePath: '/remote.php/dav/files/<username>/.daily-tasks.json',
+  hostedApiUrl: 'https://api.example.com',
+}));
+
+jest.mock('expo-auth-session', () => ({
+  makeRedirectUri: jest.fn(() => 'daily-tasks://auth'),
+}));
+
+jest.mock('expo-web-browser', () => ({
+  maybeCompleteAuthSession: jest.fn(),
+  openAuthSessionAsync: jest.fn(),
 }));
 
 jest.mock('@react-native-async-storage/async-storage', () => ({
@@ -12,7 +22,14 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
   },
 }));
 
+jest.mock('expo-secure-store', () => ({
+  getItemAsync: jest.fn().mockResolvedValue(null),
+  setItemAsync: jest.fn().mockResolvedValue(undefined),
+  deleteItemAsync: jest.fn().mockResolvedValue(undefined),
+}));
+
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
 import {
   loadAppConfig,
   saveAppConfig,
@@ -143,13 +160,56 @@ describe('backend config storage', () => {
     );
   });
 
-  it('saves empty config', async () => {
-    await saveAppConfig({});
+  it('loads hosted config and token from SecureStore', async () => {
+    (AsyncStorage.getItem as jest.Mock).mockResolvedValueOnce(JSON.stringify({
+      backend: 'hosted',
+      hosted: {
+        api_url: 'https://api.example.com',
+        email: 'user@example.com',
+      },
+    }));
+    (SecureStore.getItemAsync as jest.Mock).mockResolvedValueOnce('jwt-token');
 
+    const config = await loadAppConfig();
+
+    expect(config).toEqual({
+      backend: 'hosted',
+      hosted: {
+        apiUrl: 'https://api.example.com',
+        email: 'user@example.com',
+        token: 'jwt-token',
+      },
+    });
+  });
+
+  it('stores hosted JWT only in SecureStore when saving config', async () => {
+    await saveAppConfig({
+      backend: 'hosted',
+      hosted: {
+        apiUrl: 'https://api.example.com',
+        email: 'user@example.com',
+        token: 'jwt-token',
+      },
+    });
+
+    expect(SecureStore.setItemAsync).toHaveBeenCalledWith('dailyTasksHostedToken', 'jwt-token');
     expect(AsyncStorage.setItem).toHaveBeenCalledWith(
       'dailyTasksBackendConfig',
-      JSON.stringify({}),
+      JSON.stringify({
+        backend: 'hosted',
+        hosted: {
+          api_url: 'https://api.example.com',
+          email: 'user@example.com',
+        },
+      }),
     );
+    expect((AsyncStorage.setItem as jest.Mock).mock.calls[0][1]).not.toContain('jwt-token');
+  });
+
+  it('deletes hosted JWT when switching to local config', async () => {
+    await saveAppConfig({ backend: 'local' });
+
+    expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith('dailyTasksHostedToken');
   });
 });
 
