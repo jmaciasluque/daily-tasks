@@ -10,6 +10,23 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 
 ---
 
+## [0.14.0] - 2026-05-26
+
+### Added
+- Full CLI hosted OAuth login flow: `daily-tasks login` opens the hosted
+  Google/Facebook OAuth flow, listens on a random localhost callback port, and
+  stores the returned JWT with existing `0600` token-file permissions.
+- Hosted login URLs now carry a validated loopback `redirect_uri` for CLI
+  callbacks.
+
+### Changed
+- Server OAuth state now preserves an optional validated redirect target and
+  redirects successful logins back to loopback clients with the issued JWT.
+
+Closes #99.
+
+---
+
 ## [0.13.0] - 2026-05-25
 
 ### Added

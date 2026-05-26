@@ -7,8 +7,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"daily-tasks-server/internal/auth"
@@ -76,14 +79,15 @@ func (s *Server) Health(w http.ResponseWriter, r *http.Request) {
 // GET /auth/google
 func (s *Server) GoogleLogin(w http.ResponseWriter, r *http.Request) {
 	cfg := auth.GoogleConfig(s.BaseURL + "/auth/google/callback")
-	state := auth.NewOAuthState()
+	state := auth.NewOAuthStateWithRedirect(s.validLoginRedirect(r.URL.Query().Get("redirect_uri")))
 	http.Redirect(w, r, cfg.AuthCodeURL(state), http.StatusTemporaryRedirect)
 }
 
 // GoogleCallback handles the OAuth callback from Google.
 // GET /auth/google/callback
 func (s *Server) GoogleCallback(w http.ResponseWriter, r *http.Request) {
-	if err := auth.ValidateOAuthState(r.URL.Query().Get("state")); err != nil {
+	redirectURI, err := auth.ConsumeOAuthState(r.URL.Query().Get("state"))
+	if err != nil {
 		auth.JSONError(w, "invalid state", http.StatusBadRequest)
 		return
 	}
@@ -93,21 +97,22 @@ func (s *Server) GoogleCallback(w http.ResponseWriter, r *http.Request) {
 		auth.JSONError(w, "google auth failed", http.StatusInternalServerError)
 		return
 	}
-	s.finishLogin(w, "google", sub, email)
+	s.finishLogin(w, "google", sub, email, redirectURI)
 }
 
 // FacebookLogin redirects to Facebook OAuth consent page.
 // GET /auth/facebook
 func (s *Server) FacebookLogin(w http.ResponseWriter, r *http.Request) {
 	cfg := auth.FacebookConfig(s.BaseURL + "/auth/facebook/callback")
-	state := auth.NewOAuthState()
+	state := auth.NewOAuthStateWithRedirect(s.validLoginRedirect(r.URL.Query().Get("redirect_uri")))
 	http.Redirect(w, r, cfg.AuthCodeURL(state), http.StatusTemporaryRedirect)
 }
 
 // FacebookCallback handles the OAuth callback from Facebook.
 // GET /auth/facebook/callback
 func (s *Server) FacebookCallback(w http.ResponseWriter, r *http.Request) {
-	if err := auth.ValidateOAuthState(r.URL.Query().Get("state")); err != nil {
+	redirectURI, err := auth.ConsumeOAuthState(r.URL.Query().Get("state"))
+	if err != nil {
 		auth.JSONError(w, "invalid state", http.StatusBadRequest)
 		return
 	}
@@ -117,10 +122,10 @@ func (s *Server) FacebookCallback(w http.ResponseWriter, r *http.Request) {
 		auth.JSONError(w, "facebook auth failed", http.StatusInternalServerError)
 		return
 	}
-	s.finishLogin(w, "facebook", sub, email)
+	s.finishLogin(w, "facebook", sub, email, redirectURI)
 }
 
-func (s *Server) finishLogin(w http.ResponseWriter, provider, sub, email string) {
+func (s *Server) finishLogin(w http.ResponseWriter, provider, sub, email, redirectURI string) {
 	user, err := db.UpsertUser(s.DB, provider, sub, email)
 	if err != nil {
 		auth.JSONError(w, "db error", http.StatusInternalServerError)
@@ -131,8 +136,57 @@ func (s *Server) finishLogin(w http.ResponseWriter, provider, sub, email string)
 		auth.JSONError(w, "token error", http.StatusInternalServerError)
 		return
 	}
+	if redirectURI != "" {
+		dest, err := buildLoginRedirect(redirectURI, token, email)
+		if err != nil {
+			auth.JSONError(w, "invalid redirect", http.StatusBadRequest)
+			return
+		}
+		http.Redirect(w, &http.Request{}, dest, http.StatusTemporaryRedirect)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"token": token})
+}
+
+func buildLoginRedirect(redirectURI, token, email string) (string, error) {
+	dest, err := url.Parse(redirectURI)
+	if err != nil {
+		return "", err
+	}
+	q := dest.Query()
+	q.Set("token", token)
+	if email != "" {
+		q.Set("email", email)
+	}
+	dest.RawQuery = q.Encode()
+	return dest.String(), nil
+}
+
+func (s *Server) validLoginRedirect(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return ""
+	}
+	if isLoopbackHTTPRedirect(u) {
+		return raw
+	}
+	if strings.HasPrefix(raw, s.BaseURL+"/") {
+		return raw
+	}
+	return ""
+}
+
+func isLoopbackHTTPRedirect(u *url.URL) bool {
+	if u.Scheme != "http" {
+		return false
+	}
+	host := u.Hostname()
+	ip := net.ParseIP(host)
+	return host == "localhost" || (ip != nil && ip.IsLoopback())
 }
 
 // syncRequest is the body for PUT /api/v1/sync.

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -218,7 +219,8 @@ func printSetupUsage(w io.Writer) {
 
 func printLoginUsage(w io.Writer) {
 	fmt.Fprintln(w, "Usage: daily-tasks login [--provider google|facebook] [--api-url URL] [--token JWT]")
-	fmt.Fprintln(w, "If --token is omitted, open the printed login URL and paste the returned token with --token.")
+	fmt.Fprintln(w, "Without --token, opens the hosted OAuth flow and captures the callback on localhost.")
+	fmt.Fprintln(w, "Use --token only for manual/bootstrap flows.")
 }
 
 func printLogoutUsage(w io.Writer) {
@@ -654,9 +656,18 @@ func runLogin(args []string) error {
 
 	tokenValue := strings.TrimSpace(*token)
 	if tokenValue == "" {
-		fmt.Printf("Open this URL to log in:\n%s/auth/%s\n", normalizedAPIURL, providerValue)
-		fmt.Println("Then rerun: daily-tasks login --token <jwt>")
-		return nil
+		fmt.Printf("Opening hosted login in your browser (%s)...\n", providerValue)
+		tokenValue, err = internal.RunHostedLogin(context.Background(), internal.HostedLoginOptions{
+			APIURL:   normalizedAPIURL,
+			Provider: providerValue,
+			OpenBrowser: func(raw string) error {
+				openBrowser(raw)
+				return nil
+			},
+		})
+		if err != nil {
+			return err
+		}
 	}
 	tokenPath, err := internal.DefaultHostedTokenPath()
 	if err != nil {
