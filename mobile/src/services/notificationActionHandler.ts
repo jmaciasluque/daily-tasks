@@ -13,6 +13,22 @@ import { recordDataChange } from './history';
 import { syncWithRemoteState } from './sync';
 
 const NOTIFICATION_IDS_KEY = 'dailyTasksNotificationIds';
+type NotificationIdMap = Record<number, string[]>;
+
+function normalizeNotificationIdMap(input: unknown): NotificationIdMap {
+  if (!input || typeof input !== 'object') {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(input).map(([taskId, ids]) => {
+      if (Array.isArray(ids)) {
+        return [taskId, ids.filter((id): id is string => typeof id === 'string')];
+      }
+      return [taskId, typeof ids === 'string' ? [ids] : []];
+    }),
+  );
+}
 
 function isActionableResponse(
   response: Notifications.NotificationResponse,
@@ -20,6 +36,13 @@ function isActionableResponse(
   actionIdentifier: 'skip' | 'done';
 } {
   return response.actionIdentifier === 'skip' || response.actionIdentifier === 'done';
+}
+
+function isVisibleToday(task: Data['tasks'][number]): boolean {
+  if (!task.visibility || task.visibility.length === 0) {
+    return true;
+  }
+  return task.visibility.includes(new Date().getDay());
 }
 
 function applyNotificationAction(
@@ -33,7 +56,7 @@ function applyNotificationAction(
   }
 
   const task = cached.tasks.find(t => t.id === taskId);
-  if (!task || task.status !== 'todo') {
+  if (!task || task.status !== 'todo' || !isVisibleToday(task)) {
     return null;
   }
 
@@ -54,6 +77,20 @@ function applyNotificationAction(
   };
 }
 
+function taskIdFromResponse(response: Notifications.NotificationResponse): number | undefined {
+  return response.notification.request.content.data?.taskId as number | undefined;
+}
+
+function isStaleActionableNotification(cached: Data, response: Notifications.NotificationResponse): boolean {
+  const taskId = taskIdFromResponse(response);
+  if (!taskId || !isActionableResponse(response)) {
+    return false;
+  }
+
+  const task = cached.tasks.find(t => t.id === taskId);
+  return !!task && (task.status !== 'todo' || !isVisibleToday(task));
+}
+
 export async function syncNotificationActionUpdate(data: Data, history: import('../types').History): Promise<void> {
   const config = await loadAppConfig();
   const backend = backendFromConfig(config);
@@ -71,16 +108,16 @@ export async function syncNotificationActionUpdate(data: Data, history: import('
   }
 }
 
-async function loadNotificationIds(): Promise<Record<number, string>> {
+async function loadNotificationIds(): Promise<NotificationIdMap> {
   try {
     const stored = await AsyncStorage.getItem(NOTIFICATION_IDS_KEY);
-    return stored ? JSON.parse(stored) : {};
+    return normalizeNotificationIdMap(stored ? JSON.parse(stored) : {});
   } catch {
     return {};
   }
 }
 
-async function saveNotificationIds(ids: Record<number, string>): Promise<void> {
+async function saveNotificationIds(ids: NotificationIdMap): Promise<void> {
   try {
     await AsyncStorage.setItem(NOTIFICATION_IDS_KEY, JSON.stringify(ids));
   } catch {}
@@ -88,15 +125,17 @@ async function saveNotificationIds(ids: Record<number, string>): Promise<void> {
 
 async function cancelTaskNotification(taskId: number): Promise<void> {
   const ids = await loadNotificationIds();
-  const notifId = ids[taskId];
+  const notifIds = ids[taskId] ?? [];
 
-  if (!notifId) {
+  if (notifIds.length === 0) {
     return;
   }
 
-  try {
-    await Notifications.cancelScheduledNotificationAsync(notifId);
-  } catch {}
+  await Promise.all(notifIds.map(async (notifId) => {
+    try {
+      await Notifications.cancelScheduledNotificationAsync(notifId);
+    } catch {}
+  }));
 
   const updated = { ...ids };
   delete updated[taskId];
@@ -125,6 +164,13 @@ export async function handleNotificationAction(
   const updatedData = applyNotificationAction(cached, response);
 
   if (!updatedData) {
+    if (isStaleActionableNotification(cached, response)) {
+      await dismissPresentedNotification(response);
+      const taskId = taskIdFromResponse(response);
+      if (taskId) {
+        await cancelTaskNotification(taskId);
+      }
+    }
     return false;
   }
 
@@ -132,7 +178,7 @@ export async function handleNotificationAction(
   await saveCachedData(updatedData);
   await saveCachedHistory(updatedHistory);
   await dismissPresentedNotification(response);
-  const taskId = response.notification.request.content.data?.taskId as number | undefined;
+  const taskId = taskIdFromResponse(response);
   if (taskId) {
     await cancelTaskNotification(taskId);
   }

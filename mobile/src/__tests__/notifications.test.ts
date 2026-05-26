@@ -13,11 +13,12 @@ jest.mock('expo-notifications', () => ({
   getPermissionsAsync: jest.fn().mockResolvedValue({ status: 'granted' }),
   requestPermissionsAsync: jest.fn().mockResolvedValue({ status: 'granted' }),
   cancelAllScheduledNotificationsAsync: jest.fn().mockResolvedValue(undefined),
+  getPresentedNotificationsAsync: jest.fn().mockResolvedValue([]),
   scheduleNotificationAsync: jest.fn().mockResolvedValue('mock-notif-id'),
   cancelScheduledNotificationAsync: jest.fn().mockResolvedValue(undefined),
   dismissNotificationAsync: jest.fn().mockResolvedValue(undefined),
   AndroidImportance: { HIGH: 4 },
-  SchedulableTriggerInputTypes: { DAILY: 'daily', TIME_INTERVAL: 'timeInterval' },
+  SchedulableTriggerInputTypes: { DAILY: 'daily', WEEKLY: 'weekly', TIME_INTERVAL: 'timeInterval' },
 }));
 
 jest.mock('expo-task-manager', () => ({
@@ -96,6 +97,7 @@ const mockSchedule = Notifications.scheduleNotificationAsync as jest.Mock;
 const mockSetChannel = Notifications.setNotificationChannelAsync as jest.Mock;
 const mockCancelAll = Notifications.cancelAllScheduledNotificationsAsync as jest.Mock;
 const mockDismiss = Notifications.dismissNotificationAsync as jest.Mock;
+const mockGetPresented = Notifications.getPresentedNotificationsAsync as jest.Mock;
 const mockGetPerms = Notifications.getPermissionsAsync as jest.Mock;
 const mockRequestPerms = Notifications.requestPermissionsAsync as jest.Mock;
 
@@ -121,6 +123,20 @@ function makeResponse(
   } as unknown as Notifications.NotificationResponse;
 }
 
+function makePresentedNotification(
+  identifier: string,
+  taskId?: number,
+): Notifications.Notification {
+  return {
+    request: {
+      identifier,
+      content: {
+        data: taskId !== undefined ? { taskId } : {},
+      },
+    },
+  } as unknown as Notifications.Notification;
+}
+
 it('defines the background notification task at module load', () => {
   expect(TaskManager.defineTask).toHaveBeenCalledWith(
     BACKGROUND_NOTIFICATION_TASK,
@@ -135,6 +151,7 @@ describe('handleNotificationAction', () => {
     jest.clearAllMocks();
     (AsyncStorage.getItem as jest.Mock).mockResolvedValue(null);
     mockLoadAppConfig.mockResolvedValue({});
+    mockGetPresented.mockResolvedValue([]);
   });
 
   it('returns false when taskId is absent from notification data', async () => {
@@ -168,12 +185,38 @@ describe('handleNotificationAction', () => {
     expect(mockSaveCachedData).not.toHaveBeenCalled();
   });
 
+  it('dismisses stale action notifications for tasks already done', async () => {
+    mockLoadCachedData.mockResolvedValue(makeData([
+      { id: 1, title: 'A', duration: 5, status: 'done', order: 1 },
+    ]));
+    (AsyncStorage.getItem as jest.Mock).mockResolvedValue(JSON.stringify({ 1: 'scheduled-notif-id' }));
+
+    const result = await handleNotificationAction(makeResponse('skip', 1, 'stale-presented-id'));
+
+    expect(result).toBe(false);
+    expect(mockDismiss).toHaveBeenCalledWith('stale-presented-id');
+    expect(Notifications.cancelScheduledNotificationAsync).toHaveBeenCalledWith('scheduled-notif-id');
+  });
+
   it('returns false when the task is already skipped (not actionable)', async () => {
     mockLoadCachedData.mockResolvedValue(makeData([
       { id: 1, title: 'A', duration: 5, status: 'skipped', order: 1 },
     ]));
     const result = await handleNotificationAction(makeResponse('skip', 1));
     expect(result).toBe(false);
+    expect(mockSaveCachedData).not.toHaveBeenCalled();
+  });
+
+  it('returns false when the task is hidden today', async () => {
+    const hiddenDay = (new Date().getDay() + 1) % 7;
+    mockLoadCachedData.mockResolvedValue(makeData([
+      { id: 1, title: 'A', duration: 5, status: 'todo', order: 1, visibility: [hiddenDay] },
+    ]));
+
+    const result = await handleNotificationAction(makeResponse('done', 1, 'hidden-presented-id'));
+
+    expect(result).toBe(false);
+    expect(mockDismiss).toHaveBeenCalledWith('hidden-presented-id');
     expect(mockSaveCachedData).not.toHaveBeenCalled();
   });
 
@@ -318,12 +361,25 @@ describe('handleNotificationAction', () => {
 
     expect(Notifications.cancelScheduledNotificationAsync).toHaveBeenCalledWith('scheduled-notif-id');
   });
+
+  it('cancels every stored scheduled reminder for a weekday-limited task', async () => {
+    mockLoadCachedData.mockResolvedValue(makeData([
+      { id: 1, title: 'A', duration: 5, status: 'todo', order: 1 },
+    ]));
+    (AsyncStorage.getItem as jest.Mock).mockResolvedValue(JSON.stringify({ 1: ['mon-notif-id', 'wed-notif-id'] }));
+
+    await handleNotificationAction(makeResponse('done', 1));
+
+    expect(Notifications.cancelScheduledNotificationAsync).toHaveBeenCalledWith('mon-notif-id');
+    expect(Notifications.cancelScheduledNotificationAsync).toHaveBeenCalledWith('wed-notif-id');
+  });
 });
 
 describe('handleNotificationTaskPayload', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     (AsyncStorage.getItem as jest.Mock).mockResolvedValue(null);
+    mockGetPresented.mockResolvedValue([]);
   });
 
   it('handles task payloads that contain a notification response', async () => {
@@ -436,13 +492,95 @@ describe('rescheduleAllNotifications', () => {
     const lastCall = matchingCalls[matchingCalls.length - 1];
     const stored = JSON.parse(lastCall[1]);
     // JSON keys are strings, but JS coerces numeric property access to string
-    expect(stored['1']).toBe('new-notif-id');
+    expect(stored['1']).toEqual(['new-notif-id']);
+  });
+
+  it('uses weekly triggers for tasks limited to specific weekdays', async () => {
+    await rescheduleAllNotifications([
+      { id: 1, title: 'MWF task', duration: 10, status: 'todo', order: 1, deadline: '09:30', visibility: [1, 3, 5] },
+    ]);
+
+    expect(mockSchedule).toHaveBeenCalledTimes(3);
+    expect(mockSchedule).toHaveBeenCalledWith(expect.objectContaining({
+      trigger: expect.objectContaining({ type: 'weekly', weekday: 2, hour: 9, minute: 30 }),
+    }));
+    expect(mockSchedule).toHaveBeenCalledWith(expect.objectContaining({
+      trigger: expect.objectContaining({ type: 'weekly', weekday: 4, hour: 9, minute: 30 }),
+    }));
+    expect(mockSchedule).toHaveBeenCalledWith(expect.objectContaining({
+      trigger: expect.objectContaining({ type: 'weekly', weekday: 6, hour: 9, minute: 30 }),
+    }));
+  });
+
+  it('keeps daily triggers only for tasks visible every day', async () => {
+    await rescheduleAllNotifications([
+      { id: 1, title: 'Every day', duration: 10, status: 'todo', order: 1, deadline: '09:00' },
+      { id: 2, title: 'Also every day', duration: 10, status: 'todo', order: 2, deadline: '10:00', visibility: [] },
+    ]);
+
+    expect(mockSchedule).toHaveBeenCalledTimes(2);
+    expect(mockSchedule.mock.calls[0][0].trigger.type).toBe('daily');
+    expect(mockSchedule.mock.calls[1][0].trigger.type).toBe('daily');
+  });
+
+  it('saves every scheduled ID for multi-day visibility', async () => {
+    mockSchedule
+      .mockResolvedValueOnce('monday-id')
+      .mockResolvedValueOnce('wednesday-id');
+
+    await rescheduleAllNotifications([
+      { id: 1, title: 'MW task', duration: 10, status: 'todo', order: 1, deadline: '09:00', visibility: [1, 3] },
+    ]);
+
+    const setItemCalls = (AsyncStorage.setItem as jest.Mock).mock.calls;
+    const matchingCalls = setItemCalls.filter(([key]: [string]) => key === 'dailyTasksNotificationIds');
+    const lastCall = matchingCalls[matchingCalls.length - 1];
+    const stored = JSON.parse(lastCall[1]);
+    expect(stored['1']).toEqual(['monday-id', 'wednesday-id']);
+  });
+
+  it('dismisses presented notifications for tasks that are already done', async () => {
+    mockGetPresented.mockResolvedValue([
+      makePresentedNotification('done-presented-id', 1),
+    ]);
+
+    await rescheduleAllNotifications([
+      { id: 1, title: 'Done task', duration: 10, status: 'done', order: 1, deadline: '08:00' },
+    ]);
+
+    expect(mockDismiss).toHaveBeenCalledWith('done-presented-id');
+  });
+
+  it('dismisses presented notifications for tasks hidden today', async () => {
+    const hiddenDay = (new Date().getDay() + 1) % 7;
+    mockGetPresented.mockResolvedValue([
+      makePresentedNotification('hidden-presented-id', 1),
+    ]);
+
+    await rescheduleAllNotifications([
+      { id: 1, title: 'Hidden task', duration: 10, status: 'todo', order: 1, deadline: '08:00', visibility: [hiddenDay] },
+    ]);
+
+    expect(mockDismiss).toHaveBeenCalledWith('hidden-presented-id');
+  });
+
+  it('keeps presented notifications for todo tasks visible today', async () => {
+    mockGetPresented.mockResolvedValue([
+      makePresentedNotification('active-presented-id', 1),
+    ]);
+
+    await rescheduleAllNotifications([
+      { id: 1, title: 'Active task', duration: 10, status: 'todo', order: 1, deadline: '08:00' },
+    ]);
+
+    expect(mockDismiss).not.toHaveBeenCalledWith('active-presented-id');
   });
 });
 
 describe('scheduleTestNotification', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockGetPresented.mockResolvedValue([]);
   });
 
   it('schedules a one-off notification on the Android channel for the given task', async () => {

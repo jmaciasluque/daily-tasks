@@ -15,6 +15,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 ### Mobile
 
 #### Fixed
+- Deadline notifications now stay aligned with task state and weekday
+  visibility. Completing or skipping a task dismisses stale presented
+  notifications, and weekday-limited tasks are scheduled only on their visible
+  days.
 - Mobile launch, manual, and autosave sync now actually use the single-flight
   queue, preventing overlapping requests from racing their own WebDAV ETags.
 
