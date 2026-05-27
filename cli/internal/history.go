@@ -381,6 +381,267 @@ func AggregateStats(history History, from, to string) StatsSummary {
 	return summary
 }
 
+// ---------------------------------------------------------------------------
+// Stats enrichment: streaks, trends, weak spots
+// ---------------------------------------------------------------------------
+
+// TaskStreak tracks how many consecutive days a task has been done.
+type TaskStreak struct {
+	TaskID       int    `json:"task_id"`
+	Title        string `json:"title"`
+	Current      int    `json:"current"`       // consecutive done days from most recent back
+	Longest      int    `json:"longest"`        // longest consecutive done streak in period
+	RecordedDays int    `json:"recorded_days"`  // how many days the task appeared
+	DoneDays     int    `json:"done_days"`      // total done in period
+}
+
+// WeekStats groups daily stats into weeks for trend comparison.
+type WeekStats struct {
+	WeekLabel       string  `json:"week_label"`        // e.g. "May 18–24"
+	StartDate       string  `json:"start_date"`
+	EndDate         string  `json:"end_date"`
+	TotalTasks      int     `json:"total_tasks"`
+	DoneTasks       int     `json:"done_tasks"`
+	SkippedTasks    int     `json:"skipped_tasks"`
+	CompletionRate  float64 `json:"completion_rate"`
+}
+
+// WeeklyTrend holds the comparison between this week and last week.
+type WeeklyTrend struct {
+	ThisWeek    WeekStats `json:"this_week"`
+	LastWeek    WeekStats `json:"last_week"`
+	Change      float64   `json:"change"`       // percentage point change (+ = improving)
+	Direction   int       `json:"direction"`    // +1 improving, -1 declining, 0 flat
+}
+
+// WeekdayLabel returns a short Spanish weekday label.
+func WeekdayLabel(dow time.Weekday) string {
+	labels := []string{"Do", "Lu", "Ma", "Mi", "Ju", "Vi", "Sá"}
+	return labels[dow]
+}
+
+// DayDot returns a filled/empty dot based on completion rate thresholds.
+func DayDot(rate float64) string {
+	switch {
+	case rate >= 0.85:
+		return "🟢"
+	case rate >= 0.60:
+		return "🟡"
+	case rate >= 0.30:
+		return "🟠"
+	default:
+		return "🔴"
+	}
+}
+
+// DayBlock returns a shaded unicode block character for partial completion.
+// Returns full block, 3/4, 1/2, 1/4, or empty based on rate.
+func DayBlock(rate float64) string {
+	switch {
+	case rate >= 1.0:
+		return "█"
+	case rate >= 0.75:
+		return "▓"
+	case rate >= 0.50:
+		return "▒"
+	case rate >= 0.25:
+		return "░"
+	default:
+		return "·"
+	}
+}
+
+// ComputeTaskStreaks computes current and longest streaks for every task by
+// scanning the raw history days (snapshots) within the given date range.
+func ComputeTaskStreaks(dailies []DailyStats, history History, taskFreq []TaskFrequencyStats, from, to string) []TaskStreak {
+	// Build a lookup of task frequency stats (total done days)
+	doneMap := map[int]int{}
+	titleMap := map[int]string{}
+	for _, tf := range taskFreq {
+		doneMap[tf.TaskID] = tf.DoneDays
+		titleMap[tf.TaskID] = tf.Title
+	}
+
+	// Filter history days to range
+	filtered := make([]HistoryDay, 0, len(history.Days))
+	for _, day := range history.Days {
+		if from != "" && day.Date < from {
+			continue
+		}
+		if to != "" && day.Date > to {
+			continue
+		}
+		filtered = append(filtered, day)
+	}
+
+	// Sort ascending by date
+	sort.Slice(filtered, func(i, j int) bool {
+		return filtered[i].Date < filtered[j].Date
+	})
+
+	// Collect per-task status per day
+	type dayStatus struct {
+		date   string
+		status string
+	}
+	taskDays := map[int][]dayStatus{}
+	taskSeen := map[int]bool{}
+	for _, day := range filtered {
+		for _, snap := range day.Tasks {
+			taskDays[snap.ID] = append(taskDays[snap.ID], dayStatus{
+				date:   day.Date,
+				status: snap.Status,
+			})
+			taskSeen[snap.ID] = true
+			titleMap[snap.ID] = snap.Title
+		}
+	}
+
+	var streaks []TaskStreak
+	for taskID, days := range taskDays {
+		sort.Slice(days, func(i, j int) bool {
+			return days[i].date < days[j].date
+		})
+
+		// Current streak: scan from most recent backwards counting consecutive "done"
+		current := 0
+		for i := len(days) - 1; i >= 0; i-- {
+			if days[i].status == "done" {
+				current++
+			} else {
+				break
+			}
+		}
+
+		// Longest streak: scan all days for longest consecutive "done" run
+		longest := 0
+		run := 0
+		for _, d := range days {
+			if d.status == "done" {
+				run++
+				if run > longest {
+					longest = run
+				}
+			} else {
+				run = 0
+			}
+		}
+
+		streaks = append(streaks, TaskStreak{
+			TaskID:       taskID,
+			Title:        titleMap[taskID],
+			Current:      current,
+			Longest:      longest,
+			RecordedDays: len(days),
+			DoneDays:     doneMap[taskID],
+		})
+	}
+
+	sort.Slice(streaks, func(i, j int) bool {
+		if streaks[i].Current == streaks[j].Current {
+			return streaks[i].Longest > streaks[j].Longest
+		}
+		return streaks[i].Current > streaks[j].Current
+	})
+
+	return streaks
+}
+
+// ComputeWeeklyTrend groups the daily stats into ISO-ish weeks and compares
+// the most recent complete week with the one before it.
+func ComputeWeeklyTrend(dailies []DailyStats) WeeklyTrend {
+	if len(dailies) < 2 {
+		return WeeklyTrend{}
+	}
+
+	// Sort ascending by date
+	sorted := make([]DailyStats, len(dailies))
+	copy(sorted, dailies)
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].Date < sorted[j].Date
+	})
+
+	// Group into weeks ending on Sunday
+	type weekAccum struct {
+		start, end string
+		total, done, skipped int
+	}
+	var weeks []weekAccum
+	var current *weekAccum
+
+	for _, d := range sorted {
+		t, err := time.Parse("2006-01-02", d.Date)
+		if err != nil {
+			continue
+		}
+		// Week starts on Monday
+		weekday := t.Weekday()
+		if weekday == time.Sunday {
+			weekday = 7
+		}
+		mondayOffset := int(weekday) - 1
+		monday := t.AddDate(0, 0, -mondayOffset)
+		sunday := monday.AddDate(0, 0, 6)
+
+		if current == nil || current.start != monday.Format("2006-01-02") {
+			if current != nil {
+				weeks = append(weeks, *current)
+			}
+			current = &weekAccum{
+				start: monday.Format("2006-01-02"),
+				end:   sunday.Format("2006-01-02"),
+			}
+		}
+		current.total += d.TaskCount
+		current.done += d.DoneCount
+		current.skipped += d.SkippedCount
+	}
+	if current != nil {
+		weeks = append(weeks, *current)
+	}
+
+	// Build WeekStats from accumulators
+	var weekStats []WeekStats
+	for _, w := range weeks {
+		rate := 0.0
+		if w.total > 0 {
+			rate = float64(w.done) / float64(w.total)
+		}
+		t, _ := time.Parse("2006-01-02", w.start)
+		endT, _ := time.Parse("2006-01-02", w.end)
+		weekStats = append(weekStats, WeekStats{
+			WeekLabel:      t.Format("Jan 2") + "–" + endT.Format("2"),
+			StartDate:      w.start,
+			EndDate:        w.end,
+			TotalTasks:     w.total,
+			DoneTasks:      w.done,
+			SkippedTasks:   w.skipped,
+			CompletionRate: rate,
+		})
+	}
+
+	if len(weekStats) < 2 {
+		return WeeklyTrend{ThisWeek: weekStats[len(weekStats)-1]}
+	}
+
+	this := weekStats[len(weekStats)-1]
+	last := weekStats[len(weekStats)-2]
+	change := this.CompletionRate - last.CompletionRate
+	dir := 0
+	if change > 0.02 {
+		dir = 1
+	} else if change < -0.02 {
+		dir = -1
+	}
+
+	return WeeklyTrend{
+		ThisWeek:  this,
+		LastWeek:  last,
+		Change:    change * 100, // as percentage points
+		Direction: dir,
+	}
+}
+
 func sortHistory(history *History) {
 	sort.Slice(history.Days, func(i, j int) bool {
 		return history.Days[i].Date < history.Days[j].Date

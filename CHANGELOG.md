@@ -10,6 +10,23 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 
 ---
 
+## [0.16.0] - 2026-05-27
+
+### Added
+- Completely rewritten `daily-tasks stats` output: heatmap, streaks, weak spots, trends
+- Calendar heatmap with shaded per-day completion blocks and weekly rate
+- Streak tracking: current and longest streaks per task with visual indicators (🔥 💪 👍 💀)
+- Week-over-week trend comparison with direction arrows
+- Weak spots section: tasks sorted by lowest completion rate
+- Per-task breakdown table with done/skip/rate/streak columns
+- Terminal coloring via lipgloss (green/red/yellow thresholds)
+- New internal functions: `ComputeTaskStreaks`, `ComputeWeeklyTrend`, `WeekdayLabel`,
+  `DayDot`, `DayBlock`
+- Test coverage: 6 new tests for streak and trend computation
+
+### Changed
+- `TaskStreak`, `WeekStats`, `WeeklyTrend` types added to internal package
+
 ## [0.15.0] - 2026-05-27
 
 ### Added
