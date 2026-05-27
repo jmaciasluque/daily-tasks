@@ -10,6 +10,16 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 
 ---
 
+## [0.17.0] - 2026-05-27
+
+### Added
+- Every CLI command now pulls the latest data from the server before reading
+  the local file (`PullDataIfRemoteNewer`). This means `done`, `todo`, `list`,
+  `stats`, `add`, `edit`, etc. always see changes made via the mobile app,
+  without waiting for the desktop client to sync down.
+- `PullDataIfRemoteNewer` is read-only (WebDAV GET only, never PUT) — safe
+  alongside the desktop client and won't create conflicted copies.
+
 ## [0.16.0] - 2026-05-27
 
 ### Added

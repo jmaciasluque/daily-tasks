@@ -840,6 +840,9 @@ func loadDataAndReset() (internal.Data, string, bool, error) {
 		return internal.Data{}, "", false, err
 	}
 
+	// Pull from remote if newer (read-only GET, safe alongside desktop client)
+	internal.PullDataIfRemoteNewer(path)
+
 	data, err := internal.LoadData(path)
 	if err != nil {
 		return internal.Data{}, "", false, err

@@ -243,3 +243,40 @@ func SyncStateWithRemote(b Backend, local Data, history History) SyncStateResult
 		Message: result.Message,
 	}
 }
+
+// PullDataIfRemoteNewer fetches the data file from the configured remote
+// backend and, if the remote is newer than the local copy, overwrites the
+// local file with the remote state. Only performs GET (read-only), never
+// PUT — safe even when the desktop client is also syncing the same file.
+//
+// Returns nil on success or when there's nothing to do (no backend,
+// remote unreachable, local already current). Only returns a real error
+// if the local SaveData itself fails.
+func PullDataIfRemoteNewer(dataPath string) error {
+	backend, err := LoadRemoteBackend()
+	if err != nil {
+		return nil // no backend configured — nothing to pull
+	}
+
+	remote, _, err := FetchRemoteData(backend)
+	if err != nil {
+		return nil // remote unreachable — use local as-is
+	}
+
+	remote = NormalizeData(remote)
+	if remote.LastModified == 0 {
+		return nil // empty or unversioned remote — skip
+	}
+
+	local, err := LoadData(dataPath)
+	if err != nil {
+		return nil // can't read local — fall through to normal load
+	}
+
+	if remote.LastModified <= local.LastModified {
+		return nil // local is already current
+	}
+
+	// Remote is newer — overwrite local file with remote data
+	return SaveData(dataPath, remote)
+}
