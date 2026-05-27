@@ -476,6 +476,20 @@ func runEdit(args []string) error {
 		printEditUsage(os.Stdout)
 		return nil
 	}
+
+	// Extract task ID from positional first arg if present before flag parsing
+	// (flag parser stops at first non-flag, so we need to handle this upfront)
+	var positionalID int
+	var parsedID bool
+	restArgs := args
+	if len(args) > 0 && args[0][0] != '-' {
+		if n, err := strconv.Atoi(args[0]); err == nil && n > 0 {
+			positionalID = n
+			parsedID = true
+			restArgs = args[1:]
+		}
+	}
+
 	fs := flag.NewFlagSet("edit", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	idFlag := fs.Int("id", 0, "task id")
@@ -484,7 +498,7 @@ func runEdit(args []string) error {
 	deadline := fs.String("deadline", "", "new deadline in HH:MM")
 	visibility := fs.String("visibility", "", "new visible days: mon,tue,wed or 0-6 (empty=every day)")
 	status := fs.String("status", "", "new status: todo|done|skipped")
-	if err := fs.Parse(args); err != nil {
+	if err := fs.Parse(restArgs); err != nil {
 		return err
 	}
 
@@ -493,6 +507,18 @@ func runEdit(args []string) error {
 	fs.Visit(func(f *flag.Flag) {
 		visited[f.Name] = true
 	})
+
+	// Resolve task ID: --id flag, positional first arg, or fs.Args() fallback
+	id, err := parseID(*idFlag, fs.Args())
+	if err != nil && parsedID {
+		id = positionalID
+		err = nil
+	} else if err != nil {
+		return err
+	}
+	if !parsedID && *idFlag == 0 && len(fs.Args()) == 0 {
+		return errors.New("task id is required")
+	}
 
 	// Must have at least one update flag besides --id
 	updatable := []string{"title", "duration", "deadline", "visibility", "status"}
@@ -506,11 +532,6 @@ func runEdit(args []string) error {
 	if !hasUpdates {
 		printEditUsage(os.Stderr)
 		return errors.New("at least one field to update is required (--title, --duration, --deadline, --visibility, --status)")
-	}
-
-	id, err := parseID(*idFlag, fs.Args())
-	if err != nil {
-		return err
 	}
 
 	// Validate provided values
