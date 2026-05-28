@@ -707,23 +707,21 @@ func runStats(args []string) error {
 		return err
 	}
 
-	fmt.Printf("Stats %s to %s\n", stats.From, stats.To)
-	fmt.Printf("Recorded days: %d\n", stats.RecordedDays)
-	fmt.Printf("Snapshots: %d\n", stats.TaskCount)
-	fmt.Printf("Done: %d (%dm)\n", stats.DoneCount, stats.DoneDuration)
-	fmt.Printf("Skipped: %d (%dm)\n", stats.SkippedCount, stats.SkippedDuration)
-	fmt.Printf("Todo: %d (%dm)\n", stats.TodoCount, stats.TodoDuration)
-	fmt.Printf("Completion rate: %.0f%%\n", stats.CompletionRate*100)
-
-	if len(stats.Tasks) > 0 {
-		fmt.Println("")
-		fmt.Println("Top tasks")
-		limit := min(5, len(stats.Tasks))
-		for i := 0; i < limit; i++ {
-			task := stats.Tasks[i]
-			fmt.Printf("- %s: done %d/%d days, skipped %d days\n", task.Title, task.DoneDays, task.RecordedDays, task.SkippedDays)
-		}
+	// Load raw history for streak computation
+	history, err := internal.LoadHistory(path)
+	if err != nil {
+		// Non-fatal — streaks are a bonus
+		history = internal.History{}
 	}
+	historyWithSnapshot := internal.HistoryWithCurrentSnapshot(history, data, 0)
+
+	// Compute streaks and trends
+	streaks := internal.ComputeTaskStreaks(stats.Daily, historyWithSnapshot, stats.Tasks, fromValue, toValue)
+	trend := internal.ComputeWeeklyTrend(stats.Daily)
+
+	// Render
+	output := renderStats(stats, streaks, trend)
+	fmt.Print(output)
 
 	return nil
 }

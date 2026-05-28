@@ -709,3 +709,137 @@ func TestBuildStatsCreatesSnapshotForCurrentData(t *testing.T) {
 		t.Errorf("expected 1 recorded day for today, got %d", stats.RecordedDays)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// ComputeTaskStreaks
+// ---------------------------------------------------------------------------
+
+func TestComputeTaskStreaks(t *testing.T) {
+	history := History{
+		Days: []HistoryDay{
+			{Date: "2026-05-25", Tasks: []TaskSnapshot{
+				{ID: 1, Title: "Run", Status: "done"},
+				{ID: 2, Title: "Read", Status: "done"},
+			}},
+			{Date: "2026-05-26", Tasks: []TaskSnapshot{
+				{ID: 1, Title: "Run", Status: "done"},
+				{ID: 2, Title: "Read", Status: "skipped"},
+			}},
+			{Date: "2026-05-27", Tasks: []TaskSnapshot{
+				{ID: 1, Title: "Run", Status: "done"},
+				{ID: 2, Title: "Read", Status: "done"},
+			}},
+		},
+	}
+	taskFreq := []TaskFrequencyStats{
+		{TaskID: 1, Title: "Run", DoneDays: 3, RecordedDays: 3},
+		{TaskID: 2, Title: "Read", DoneDays: 2, RecordedDays: 3},
+	}
+
+	streaks := ComputeTaskStreaks(nil, history, taskFreq, "", "")
+	if len(streaks) != 2 {
+		t.Fatalf("expected 2 streaks, got %d", len(streaks))
+	}
+
+	// Task 1: Run — done all 3 days
+	var runStreak TaskStreak
+	var readStreak TaskStreak
+	for _, s := range streaks {
+		if s.TaskID == 1 {
+			runStreak = s
+		}
+		if s.TaskID == 2 {
+			readStreak = s
+		}
+	}
+
+	if runStreak.Current != 3 || runStreak.Longest != 3 {
+		t.Errorf("Run: expected current=3, longest=3, got current=%d, longest=%d", runStreak.Current, runStreak.Longest)
+	}
+	// Task 2: Read — done, skipped, done → current=1, longest=1
+	if readStreak.Current != 1 || readStreak.Longest != 1 {
+		t.Errorf("Read: expected current=1, longest=1, got current=%d, longest=%d", readStreak.Current, readStreak.Longest)
+	}
+}
+
+func TestComputeTaskStreaksEmptyHistory(t *testing.T) {
+	streaks := ComputeTaskStreaks(nil, History{}, nil, "", "")
+	if len(streaks) != 0 {
+		t.Errorf("expected 0 streaks for empty history, got %d", len(streaks))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// ComputeWeeklyTrend
+// ---------------------------------------------------------------------------
+
+func TestComputeWeeklyTrend(t *testing.T) {
+	// 14 days of data: 2 full weeks
+	dailies := []DailyStats{
+		{Date: "2026-05-11", TaskCount: 10, DoneCount: 5},  // Mon week 1
+		{Date: "2026-05-12", TaskCount: 10, DoneCount: 6},
+		{Date: "2026-05-13", TaskCount: 10, DoneCount: 7},
+		{Date: "2026-05-14", TaskCount: 10, DoneCount: 8},
+		{Date: "2026-05-15", TaskCount: 10, DoneCount: 9},
+		{Date: "2026-05-16", TaskCount: 10, DoneCount: 4},
+		{Date: "2026-05-17", TaskCount: 10, DoneCount: 3},  // Sun week 1 → 42/70 = 60%
+		{Date: "2026-05-18", TaskCount: 10, DoneCount: 8},  // Mon week 2
+		{Date: "2026-05-19", TaskCount: 10, DoneCount: 9},
+		{Date: "2026-05-20", TaskCount: 10, DoneCount: 7},
+		{Date: "2026-05-21", TaskCount: 10, DoneCount: 10},
+		{Date: "2026-05-22", TaskCount: 10, DoneCount: 6},
+		{Date: "2026-05-23", TaskCount: 10, DoneCount: 5},
+		{Date: "2026-05-24", TaskCount: 10, DoneCount: 4},  // Sun week 2 → 49/70 = 70%
+	}
+
+	trend := ComputeWeeklyTrend(dailies)
+
+	if trend.ThisWeek.DoneTasks == 0 && trend.LastWeek.DoneTasks == 0 {
+		t.Fatal("expected non-zero trend data")
+	}
+	if trend.LastWeek.CompletionRate != 0.6 {
+		t.Errorf("expected last week 60%%, got %.0f%%", trend.LastWeek.CompletionRate*100)
+	}
+	if trend.ThisWeek.CompletionRate != 0.7 {
+		t.Errorf("expected this week 70%%, got %.0f%%", trend.ThisWeek.CompletionRate*100)
+	}
+	// 70% - 60% = +10 pp → improving
+	if trend.Direction != 1 {
+		t.Errorf("expected improving direction (+1), got %d", trend.Direction)
+	}
+}
+
+func TestComputeWeeklyTrendSingleWeek(t *testing.T) {
+	dailies := []DailyStats{
+		{Date: "2026-05-18", TaskCount: 10, DoneCount: 8},
+		{Date: "2026-05-19", TaskCount: 10, DoneCount: 6},
+	}
+	trend := ComputeWeeklyTrend(dailies)
+	if trend.ThisWeek.TotalTasks == 0 {
+		t.Fatal("expected this week to have data")
+	}
+	if trend.LastWeek.TotalTasks != 0 {
+		t.Errorf("expected no last week data with only 1 week, got %d tasks", trend.LastWeek.TotalTasks)
+	}
+}
+
+func TestComputeWeeklyTrendEmpty(t *testing.T) {
+	trend := ComputeWeeklyTrend(nil)
+	if trend.ThisWeek.TotalTasks != 0 {
+		t.Errorf("expected empty trend, got %+v", trend)
+	}
+}
+
+func TestComputeWeeklyTrendReverseOrder(t *testing.T) {
+	// Data in reverse order — should still compute correctly
+	dailies := []DailyStats{
+		{Date: "2026-05-24", TaskCount: 10, DoneCount: 9},  // Sun week 2
+		{Date: "2026-05-17", TaskCount: 10, DoneCount: 3},  // Sun week 1
+		{Date: "2026-05-11", TaskCount: 10, DoneCount: 5},  // Mon week 1
+		{Date: "2026-05-18", TaskCount: 10, DoneCount: 8},  // Mon week 2
+	}
+	trend := ComputeWeeklyTrend(dailies)
+	if trend.ThisWeek.DoneTasks == 0 || trend.LastWeek.DoneTasks == 0 {
+		t.Fatal("expected non-zero trend from reverse-ordered data")
+	}
+}
