@@ -148,7 +148,7 @@ func BearerToken(header string) (string, error) {
 }
 
 // stateStore keeps one-time OAuth state values for the single-machine Fly.io deployment.
-// For multi-instance deployment, replace with a Redis or DB-backed store.
+// For multi-instance deployment, replace with signed state, Redis, or a DB-backed store.
 type oauthStateValue struct {
 	ExpiresAt   time.Time
 	RedirectURI string

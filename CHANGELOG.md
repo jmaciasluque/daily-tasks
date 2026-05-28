@@ -21,8 +21,18 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 - Settings UI for hosted sign-in, connected account display, and sign-out.
 - Server OAuth login support for mobile `redirect_uri` callbacks that return the
   hosted JWT and account email to the app deep link.
+- Full CLI hosted OAuth login flow: `daily-tasks login` opens the hosted
+  Google/Facebook OAuth flow, listens on a random localhost callback port, and
+  stores the returned JWT with existing `0600` token-file permissions.
+- Hosted login URLs now carry a validated loopback `redirect_uri` for CLI
+  callbacks.
 
-Closes #100.
+### Changed
+- Server OAuth state now preserves an optional validated redirect target and
+  redirects successful logins back to loopback/deep-link clients with the
+  issued JWT and optional email.
+
+Closes #99, #100.
 
 ---
 

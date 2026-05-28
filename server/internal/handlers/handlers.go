@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -136,22 +137,30 @@ func (s *Server) finishLogin(w http.ResponseWriter, provider, sub, email, redire
 		return
 	}
 	if redirectURI != "" {
-		dest, err := url.Parse(redirectURI)
+		dest, err := buildLoginRedirect(redirectURI, token, email)
 		if err != nil {
 			auth.JSONError(w, "invalid redirect", http.StatusBadRequest)
 			return
 		}
-		q := dest.Query()
-		q.Set("token", token)
-		if email != "" {
-			q.Set("email", email)
-		}
-		dest.RawQuery = q.Encode()
-		http.Redirect(w, &http.Request{}, dest.String(), http.StatusTemporaryRedirect)
+		http.Redirect(w, &http.Request{}, dest, http.StatusTemporaryRedirect)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"token": token, "email": email})
+}
+
+func buildLoginRedirect(redirectURI, token, email string) (string, error) {
+	dest, err := url.Parse(redirectURI)
+	if err != nil {
+		return "", err
+	}
+	q := dest.Query()
+	q.Set("token", token)
+	if email != "" {
+		q.Set("email", email)
+	}
+	dest.RawQuery = q.Encode()
+	return dest.String(), nil
 }
 
 func (s *Server) validLoginRedirect(raw string) string {
@@ -165,10 +174,22 @@ func (s *Server) validLoginRedirect(raw string) string {
 	if u.Scheme == "daily-tasks" {
 		return raw
 	}
+	if isLoopbackHTTPRedirect(u) {
+		return raw
+	}
 	if strings.HasPrefix(raw, s.BaseURL+"/") {
 		return raw
 	}
 	return ""
+}
+
+func isLoopbackHTTPRedirect(u *url.URL) bool {
+	if u.Scheme != "http" {
+		return false
+	}
+	host := u.Hostname()
+	ip := net.ParseIP(host)
+	return host == "localhost" || (ip != nil && ip.IsLoopback())
 }
 
 // syncRequest is the body for PUT /api/v1/sync.
