@@ -149,6 +149,11 @@ func runNonTUI(args []string) (bool, error) {
 		return true, runLogout(cmdArgs)
 	case "web":
 		return true, runWeb(cmdArgs)
+	case "edit":
+		if err := requireConfiguredBackend(); err != nil {
+			return true, err
+		}
+		return true, runEdit(cmdArgs)
 	default:
 		return true, fmt.Errorf("unknown command: %s", cmd)
 	}
@@ -166,6 +171,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  skip             Mark a task as skipped")
 	fmt.Fprintln(w, "  todo             Mark a task as todo")
 	fmt.Fprintln(w, "  delete, del, rm  Delete a task")
+	fmt.Fprintln(w, "  edit             Edit a task's fields")
 	fmt.Fprintln(w, "  sync             Sync with Nextcloud")
 	fmt.Fprintln(w, "  push             Force push local data")
 	fmt.Fprintln(w, "  stats            Show historical stats")
@@ -195,6 +201,12 @@ func printSkipUsage(w io.Writer) {
 
 func printDeleteUsage(w io.Writer) {
 	fmt.Fprintln(w, "Usage: daily-tasks delete <id> [--id <id>]")
+}
+
+func printEditUsage(w io.Writer) {
+	fmt.Fprintln(w, "Usage: daily-tasks edit <id> [--id <id>] [--title \"Task title\"] [--duration 15] [--deadline HH:MM] [--visibility mon,wed,fri] [--status todo|done|skipped]")
+	fmt.Fprintln(w, "All flags except --id are optional. Only provided fields are updated.")
+	fmt.Fprintln(w, "Use --visibility \"\" to clear day restrictions (visible every day).")
 }
 
 func printSyncUsage(w io.Writer) {
@@ -456,6 +468,131 @@ func runDelete(args []string) error {
 		return err
 	}
 	fmt.Printf("Deleted task #%d\n", id)
+	return nil
+}
+
+func runEdit(args []string) error {
+	if wantsHelp(args) {
+		printEditUsage(os.Stdout)
+		return nil
+	}
+
+	// Extract task ID from positional first arg if present before flag parsing
+	// (flag parser stops at first non-flag, so we need to handle this upfront)
+	var positionalID int
+	var parsedID bool
+	restArgs := args
+	if len(args) > 0 && args[0][0] != '-' {
+		if n, err := strconv.Atoi(args[0]); err == nil && n > 0 {
+			positionalID = n
+			parsedID = true
+			restArgs = args[1:]
+		}
+	}
+
+	fs := flag.NewFlagSet("edit", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	idFlag := fs.Int("id", 0, "task id")
+	title := fs.String("title", "", "new title")
+	duration := fs.Int("duration", 0, "new duration in minutes")
+	deadline := fs.String("deadline", "", "new deadline in HH:MM")
+	visibility := fs.String("visibility", "", "new visible days: mon,tue,wed or 0-6 (empty=every day)")
+	status := fs.String("status", "", "new status: todo|done|skipped")
+	if err := fs.Parse(restArgs); err != nil {
+		return err
+	}
+
+	// Track which flags were explicitly set
+	visited := map[string]bool{}
+	fs.Visit(func(f *flag.Flag) {
+		visited[f.Name] = true
+	})
+
+	// Resolve task ID: --id flag, positional first arg, or fs.Args() fallback
+	id, err := parseID(*idFlag, fs.Args())
+	if err != nil && parsedID {
+		id = positionalID
+		err = nil
+	} else if err != nil {
+		return err
+	}
+	if !parsedID && *idFlag == 0 && len(fs.Args()) == 0 {
+		return errors.New("task id is required")
+	}
+
+	// Must have at least one update flag besides --id
+	updatable := []string{"title", "duration", "deadline", "visibility", "status"}
+	hasUpdates := false
+	for _, name := range updatable {
+		if visited[name] {
+			hasUpdates = true
+			break
+		}
+	}
+	if !hasUpdates {
+		printEditUsage(os.Stderr)
+		return errors.New("at least one field to update is required (--title, --duration, --deadline, --visibility, --status)")
+	}
+
+	// Validate provided values
+	if visited["title"] && strings.TrimSpace(*title) == "" {
+		return errors.New("title cannot be empty")
+	}
+	if visited["duration"] && *duration <= 0 {
+		return errors.New("duration must be a positive integer")
+	}
+	if visited["deadline"] {
+		if _, err := parseDeadline(*deadline); err != nil {
+			return err
+		}
+	}
+	if visited["visibility"] {
+		if _, err := parseVisibility(*visibility); err != nil {
+			return err
+		}
+	}
+	if visited["status"] {
+		sv := strings.ToLower(strings.TrimSpace(*status))
+		if sv != "todo" && sv != "done" && sv != "skipped" {
+			return errors.New("status must be todo, done, or skipped")
+		}
+	}
+
+	data, path, _, err := loadDataAndReset()
+	if err != nil {
+		return err
+	}
+
+	task := internal.FindTask(&data, id)
+	if task == nil {
+		return fmt.Errorf("task %d not found", id)
+	}
+
+	before := internal.CloneData(data)
+
+	if visited["title"] {
+		task.Title = strings.TrimSpace(*title)
+	}
+	if visited["duration"] {
+		task.Duration = *duration
+	}
+	if visited["deadline"] {
+		task.Deadline = strings.TrimSpace(*deadline)
+	}
+	if visited["visibility"] {
+		v, _ := parseVisibility(*visibility)
+		task.Visibility = v
+	}
+	if visited["status"] {
+		sv := strings.ToLower(strings.TrimSpace(*status))
+		task.Status = sv
+		task.Order = internal.NextOrder(&data, sv)
+	}
+
+	if err := internal.SaveDataWithHistory(path, before, data); err != nil {
+		return err
+	}
+	fmt.Printf("Updated task #%d\n", id)
 	return nil
 }
 

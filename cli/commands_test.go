@@ -1039,11 +1039,50 @@ func TestRunNonTUIDelAlias(t *testing.T) {
 		Tasks:     []internal.Task{{ID: 1, Title: "Del me", Duration: 5, Status: "todo", Order: 1}},
 	}
 	if err := internal.SaveData(dataPath, data); err != nil {
-		t.Fatalf("seed: %v", err)
+			t.Fatalf("seed: %v", err)
+		}
+
+		handled, err := runNonTUI([]string{"del", "1"})
+		if !handled || err != nil {
+			t.Errorf("expected (true, nil) for del, got (%v, %v)", handled, err)
+		}
 	}
 
-	handled, err := runNonTUI([]string{"del", "1"})
-	if !handled || err != nil {
-		t.Errorf("expected (true, nil) for del, got (%v, %v)", handled, err)
+	// ---------------------------------------------------------------------------
+	// runEdit
+	// ---------------------------------------------------------------------------
+
+	func TestRunEditTitleOnly(t *testing.T) {
+		dataPath, _ := setupCLIEnv(t)
+
+		data := internal.Data{
+			LastReset: time.Now().Format("2006-01-02"),
+			NextID:    2,
+			Tasks:     []internal.Task{{ID: 1, Title: "Old Title", Duration: 30, Status: "todo", Order: 1, Deadline: "13:00"}},
+		}
+		if err := internal.SaveData(dataPath, data); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+
+		if err := runEdit([]string{"--id", "1", "--title", "New Title"}); err != nil {
+			t.Fatalf("runEdit: %v", err)
+		}
+
+		got, _ := internal.LoadData(dataPath)
+		task := internal.FindTask(&got, 1)
+		if task == nil {
+			t.Fatal("task not found after edit")
+		}
+		if task.Title != "New Title" {
+			t.Fatalf("expected title 'New Title', got %q", task.Title)
+		}
+		if task.Duration != 30 {
+			t.Fatalf("expected duration unchanged (30), got %d", task.Duration)
+		}
+		if task.Deadline != "13:00" {
+			t.Fatalf("expected deadline unchanged (13:00), got %q", task.Deadline)
+		}
+		if task.Status != "todo" {
+			t.Fatalf("expected status unchanged (todo), got %q", task.Status)
+		}
 	}
-}

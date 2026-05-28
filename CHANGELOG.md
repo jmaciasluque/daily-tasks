@@ -10,7 +10,15 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 
 ---
 
-## [0.14.0] - 2026-05-26
+## [0.15.0] - 2026-05-27
+
+### Added
+- New `daily-tasks edit <id>` command to update fields on existing tasks
+- Supports `--title`, `--duration`, `--deadline`, `--visibility`, and `--status` flags
+- Only flags explicitly provided are applied; uses `--visibility ""` to clear day restrictions
+- Includes validation for all updatable fields
+
+Closes #CLI_EDIT.
 
 ### Added
 - Mobile hosted backend support with Google/Facebook OAuth via Expo auth session
