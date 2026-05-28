@@ -13,6 +13,14 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 ## [0.14.0] - 2026-05-26
 
 ### Added
+- Mobile hosted backend support with Google/Facebook OAuth via Expo auth session
+  browser flow, secure JWT storage via `expo-secure-store`, and hosted
+  `GET/PUT /api/v1/sync` integration using bearer-token auth.
+- Hosted backend config persistence for mobile using the shared snake_case config
+  schema while keeping JWTs out of AsyncStorage.
+- Settings UI for hosted sign-in, connected account display, and sign-out.
+- Server OAuth login support for mobile `redirect_uri` callbacks that return the
+  hosted JWT and account email to the app deep link.
 - Full CLI hosted OAuth login flow: `daily-tasks login` opens the hosted
   Google/Facebook OAuth flow, listens on a random localhost callback port, and
   stores the returned JWT with existing `0600` token-file permissions.
@@ -21,9 +29,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 
 ### Changed
 - Server OAuth state now preserves an optional validated redirect target and
-  redirects successful logins back to loopback clients with the issued JWT.
+  redirects successful logins back to loopback/deep-link clients with the
+  issued JWT and optional email.
 
-Closes #99.
+Closes #99, #100.
 
 ---
 

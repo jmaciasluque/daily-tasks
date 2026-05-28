@@ -1,6 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
 import type { AppConfig, Data, History, Settings } from '../types';
 import { defaultSettings, WebDAVBackend } from './backend_webdav';
+import { defaultHostedSettings, HostedBackend } from './backend_hosted';
 import type { Backend } from './backend';
 import { emptyData, normalizeData } from './data';
 import { emptyHistory, normalizeHistory } from './history';
@@ -8,6 +10,7 @@ import { storagePrefix } from '../config/env';
 
 const STORAGE_SETTINGS = `${storagePrefix}Settings`;
 const STORAGE_BACKEND_CONFIG = `${storagePrefix}BackendConfig`;
+const STORAGE_HOSTED_TOKEN = `${storagePrefix}HostedToken`;
 const STORAGE_CACHE = `${storagePrefix}Cache`;
 const STORAGE_HISTORY = `${storagePrefix}History`;
 
@@ -21,6 +24,10 @@ type PersistedNextcloudConfig = {
 type PersistedAppConfig = {
   backend?: AppConfig['backend'];
   nextcloud?: PersistedNextcloudConfig;
+  hosted?: {
+    api_url?: string;
+    email?: string;
+  };
 };
 
 function normalizeAppConfig(config: AppConfig): AppConfig {
@@ -38,10 +45,20 @@ function normalizeAppConfig(config: AppConfig): AppConfig {
     };
   }
 
+  if (config.backend === 'hosted') {
+    return {
+      backend: 'hosted',
+      hosted: {
+        ...defaultHostedSettings,
+        ...(config.hosted ?? {}),
+      },
+    };
+  }
+
   return {};
 }
 
-function fromPersistedConfig(config: PersistedAppConfig): AppConfig {
+async function fromPersistedConfig(config: PersistedAppConfig): Promise<AppConfig> {
   if (config.backend === 'local') {
     return { backend: 'local' };
   }
@@ -54,6 +71,18 @@ function fromPersistedConfig(config: PersistedAppConfig): AppConfig {
         username: config.nextcloud?.login_name ?? '',
         password: config.nextcloud?.app_password ?? '',
         remotePath: config.nextcloud?.remote_path ?? '',
+      },
+    });
+  }
+
+  if (config.backend === 'hosted') {
+    const token = await SecureStore.getItemAsync(STORAGE_HOSTED_TOKEN).catch(() => null);
+    return normalizeAppConfig({
+      backend: 'hosted',
+      hosted: {
+        apiUrl: config.hosted?.api_url ?? defaultHostedSettings.apiUrl,
+        email: config.hosted?.email,
+        token: token ?? undefined,
       },
     });
   }
@@ -78,6 +107,16 @@ function toPersistedConfig(config: AppConfig): PersistedAppConfig {
     };
   }
 
+  if (config.backend === 'hosted' && config.hosted) {
+    return {
+      backend: 'hosted',
+      hosted: {
+        api_url: config.hosted.apiUrl,
+        email: config.hosted.email,
+      },
+    };
+  }
+
   return {};
 }
 
@@ -85,7 +124,7 @@ export async function loadAppConfig(): Promise<AppConfig> {
   try {
     const savedConfig = await AsyncStorage.getItem(STORAGE_BACKEND_CONFIG);
     if (savedConfig) {
-      return fromPersistedConfig(JSON.parse(savedConfig));
+      return await fromPersistedConfig(JSON.parse(savedConfig));
     }
 
     const savedSettings = await AsyncStorage.getItem(STORAGE_SETTINGS);
@@ -108,7 +147,13 @@ export async function loadAppConfig(): Promise<AppConfig> {
 }
 
 export async function saveAppConfig(config: AppConfig): Promise<void> {
-  await AsyncStorage.setItem(STORAGE_BACKEND_CONFIG, JSON.stringify(toPersistedConfig(normalizeAppConfig(config))));
+  const normalized = normalizeAppConfig(config);
+  if (normalized.backend === 'hosted' && normalized.hosted?.token) {
+    await SecureStore.setItemAsync(STORAGE_HOSTED_TOKEN, normalized.hosted.token);
+  } else if (normalized.backend !== 'hosted') {
+    await SecureStore.deleteItemAsync(STORAGE_HOSTED_TOKEN).catch(() => {});
+  }
+  await AsyncStorage.setItem(STORAGE_BACKEND_CONFIG, JSON.stringify(toPersistedConfig(normalized)));
 }
 
 export function nextcloudSettingsFromConfig(config: AppConfig): Settings {
@@ -116,17 +161,25 @@ export function nextcloudSettingsFromConfig(config: AppConfig): Settings {
 }
 
 // backendFromConfig returns a runtime Backend for the configured remote
-// store, or null when the user has not finished setup. Today the only
-// remote backend is WebDAV (Nextcloud); future backends slot in here.
+// store, or null when the user has not finished setup.
 export function backendFromConfig(config: AppConfig): Backend | null {
-  if (config.backend !== 'nextcloud') {
-    return null;
+  if (config.backend === 'nextcloud') {
+    const settings = nextcloudSettingsFromConfig(config);
+    if (!settings.baseUrl || !settings.username || !settings.password || !settings.remotePath) {
+      return null;
+    }
+    return new WebDAVBackend(settings);
   }
-  const settings = nextcloudSettingsFromConfig(config);
-  if (!settings.baseUrl || !settings.username || !settings.password || !settings.remotePath) {
-    return null;
+
+  if (config.backend === 'hosted') {
+    const hosted = { ...defaultHostedSettings, ...(config.hosted ?? {}) };
+    if (!hosted.apiUrl || !hosted.token) {
+      return null;
+    }
+    return new HostedBackend(hosted);
   }
-  return new WebDAVBackend(settings);
+
+  return null;
 }
 
 export async function loadCachedData(): Promise<Data> {

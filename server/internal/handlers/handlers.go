@@ -146,7 +146,7 @@ func (s *Server) finishLogin(w http.ResponseWriter, provider, sub, email, redire
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"token": token})
+	json.NewEncoder(w).Encode(map[string]string{"token": token, "email": email})
 }
 
 func buildLoginRedirect(redirectURI, token, email string) (string, error) {
@@ -168,8 +168,11 @@ func (s *Server) validLoginRedirect(raw string) string {
 		return ""
 	}
 	u, err := url.Parse(raw)
-	if err != nil || u.Scheme == "" || u.Host == "" {
+	if err != nil {
 		return ""
+	}
+	if u.Scheme == "daily-tasks" {
+		return raw
 	}
 	if isLoopbackHTTPRedirect(u) {
 		return raw
