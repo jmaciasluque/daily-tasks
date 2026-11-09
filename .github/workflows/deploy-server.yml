@@ -1,0 +1,48 @@
+name: Deploy server to Fly.io
+
+on:
+  push:
+    branches: [main]
+    paths: [server/**, web/**, mobile/src/services/**, mobile/src/gen/**, mobile/src/types/**, proto/**]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-server
+  cancel-in-progress: false
+
+jobs:
+  test:
+    uses: ./.github/workflows/server.yml
+
+  deploy:
+    name: Deploy
+    needs: test
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            web/package-lock.json
+            mobile/package-lock.json
+      - name: Build the hosted web UI into the server image
+        run: |
+          (cd mobile && npm ci --ignore-scripts)
+          (cd web && npm ci && npm run build:hosted)
+          cp -R web/dist-hosted/. server/internal/webapp/dist/
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: Deploy
+        working-directory: server
+        run: flyctl deploy --remote-only --wait-timeout 300
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+      - name: Smoke test
+        run: |
+          for i in $(seq 1 10); do
+            curl -fsS https://daily-tasks-api.fly.dev/ready && exit 0
+            sleep 5
+          done
+          exit 1

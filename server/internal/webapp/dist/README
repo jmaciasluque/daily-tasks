@@ -1,0 +1,1 @@
+The hosted web UI is copied here by CI (web: npm run build:hosted). Kept so go:embed always has a match.

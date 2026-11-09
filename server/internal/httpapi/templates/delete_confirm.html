@@ -1,0 +1,11 @@
+{{template "head" .}}
+<div class="card">
+<h1>Delete this account?</h1>
+<p>You are signed in as <strong>{{if .Email}}{{.Email}}{{else}}your account{{end}}</strong>. This permanently deletes the account and all synced tasks and history.</p>
+<form method="post" action="/account/delete/confirm">
+<input type="hidden" name="token" value="{{.Token}}">
+<button class="btn danger" type="submit">Permanently delete my account</button>
+</form>
+<p class="muted"><a href="/">Cancel</a></p>
+</div>
+{{template "foot" .}}

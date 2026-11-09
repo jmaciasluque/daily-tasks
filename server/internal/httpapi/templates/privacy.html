@@ -1,0 +1,43 @@
+{{template "head" .}}
+<div class="card">
+<h1>Privacy policy</h1>
+<p class="muted">Last updated {{.Updated}}</p>
+
+<p>Daily Tasks is a personal daily task board for Android, the terminal and the web. This policy explains what the optional sync service at {{.BaseURL}} stores and why. It is short because we collect very little.</p>
+
+<h2>Using the app without an account</h2>
+<p>If you choose “Use without an account”, your tasks stay on your device. Nothing is sent to our servers. If you connect your own Nextcloud server, data goes only to that server.</p>
+
+<h2>What we store when you sign in</h2>
+<ul>
+<li><strong>Account identifier</strong>: the unique, opaque ID that Google gives us for your account, and your email address if Google reports it as verified. We use it to recognise you on your next sign-in and to show you which account you are using.</li>
+<li><strong>Your tasks</strong>: task titles, durations, optional deadlines and weekday visibility, status (to do / done / skipped), ordering, theme choice, and the history of those changes. We store this only to sync it between your devices.</li>
+</ul>
+<p>We do not request your name, contacts, location, photos or any other Google data. The app has no advertising, no analytics SDKs and no tracking.</p>
+
+<h2>How it is protected</h2>
+<ul>
+<li>All traffic is encrypted in transit with TLS.</li>
+<li>Task data is encrypted at rest with AES-256-GCM using a key derived separately for each account.</li>
+<li>Access to the service requires a signed session token that you can revoke by signing out everywhere or deleting your account.</li>
+</ul>
+
+<h2>Technical logs</h2>
+<p>The server records operational logs (time, endpoint, status code, duration) to keep the service running. Logs never contain task content or session tokens. IP addresses are held briefly in memory for rate limiting only. Our hosting provider retains platform logs for a limited period.</p>
+
+<h2>Who processes the data</h2>
+<p>The service runs on <a href="https://fly.io">Fly.io</a> infrastructure in the European Union region and its managed database. Google processes your sign-in under its own privacy policy. We do not sell, rent or share your data with anyone else, and we do not use it to train AI models.</p>
+
+<h2>Retention and deletion</h2>
+<p>We keep your account and synced tasks until you delete them. You can delete your account at any time in the app (Config → Delete account) or on the <a href="/account/delete">account deletion page</a>. Deletion is immediate; encrypted database backups expire within 30 days.</p>
+
+<h2>Your rights</h2>
+<p>You can access, export (your data is always present on your own devices), correct and delete your data. If you are in the EU/EEA you also have the rights granted by the GDPR, including the right to complain to your data protection authority. Contact: {{template "contact" .}}.</p>
+
+<h2>Children</h2>
+<p>The service is not directed at children under 13 and we do not knowingly collect their data.</p>
+
+<h2>Changes</h2>
+<p>If this policy changes materially we will update the date above and, where appropriate, tell you in the app.</p>
+</div>
+{{template "foot" .}}

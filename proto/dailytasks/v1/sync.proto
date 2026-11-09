@@ -1,0 +1,57 @@
+syntax = "proto3";
+
+package dailytasks.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// SyncService stores the two JSON documents every client keeps locally:
+// the task board ("data", see schema.json) and its change history.
+//
+// The documents are opaque JSON to the server (it only checks they are JSON
+// objects within the size limit). Merging happens on the clients; the server
+// provides optimistic concurrency via etags so concurrent writers never
+// silently overwrite each other.
+service SyncService {
+  // GetState returns the caller's documents. A user who never synced gets
+  // exists=false and etag="\"empty\"".
+  rpc GetState(GetStateRequest) returns (GetStateResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+
+  // PutState replaces both documents atomically. Fails with
+  // FAILED_PRECONDITION when the precondition no longer holds; the client
+  // should GetState, merge, and retry.
+  rpc PutState(PutStateRequest) returns (PutStateResponse);
+}
+
+message GetStateRequest {}
+
+message GetStateResponse {
+  bool exists = 1;
+  // UTF-8 JSON object. Empty when exists=false.
+  bytes data = 2;
+  // UTF-8 JSON object. Empty when exists=false.
+  bytes history = 3;
+  // Concurrency token; pass back in PutStateRequest.if_match.
+  string etag = 4;
+  google.protobuf.Timestamp updated_at = 5;
+}
+
+message PutStateRequest {
+  // UTF-8 JSON object, at most 512 KiB.
+  bytes data = 1;
+  // UTF-8 JSON object, at most 512 KiB.
+  bytes history = 2;
+  oneof precondition {
+    // Write only if the stored state still has this etag.
+    string if_match = 3;
+    // Write only if no state exists yet.
+    bool create_only = 4;
+  }
+  // With no precondition set the write is unconditional.
+}
+
+message PutStateResponse {
+  string etag = 1;
+  google.protobuf.Timestamp updated_at = 2;
+}

@@ -1,0 +1,68 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/daily-tasks/config.schema.json",
+  "title": "Daily Tasks Backend Config",
+  "description": "Shared backend configuration schema used by the CLI, local web app, and mobile app.",
+  "type": "object",
+  "required": ["backend"],
+  "properties": {
+    "backend": {
+      "type": "string",
+      "enum": ["local", "nextcloud"],
+      "description": "Selected backend for this client installation."
+    },
+    "nextcloud": {
+      "type": "object",
+      "description": "Nextcloud connection details for the selected client installation.",
+      "required": ["server_url", "login_name", "app_password", "remote_path"],
+      "properties": {
+        "server_url": {
+          "type": "string",
+          "format": "uri",
+          "description": "Base URL of the Nextcloud server, without a trailing slash."
+        },
+        "login_name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Login name returned by Nextcloud Login Flow v2."
+        },
+        "app_password": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Per-client Nextcloud app password returned by Login Flow v2."
+        },
+        "remote_path": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Remote WebDAV path to the Daily Tasks JSON file."
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "backend": { "const": "nextcloud" }
+        }
+      },
+      "then": {
+        "required": ["nextcloud"]
+      }
+    }
+  ],
+  "examples": [
+    {
+      "backend": "local"
+    },
+    {
+      "backend": "nextcloud",
+      "nextcloud": {
+        "server_url": "https://cloud.example.com",
+        "login_name": "user",
+        "app_password": "app-password",
+        "remote_path": "/remote.php/dav/files/user/.daily-tasks.json"
+      }
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+cli/bin/
+cli/daily-tasks
+web/tsconfig.tsbuildinfo
+Local
+.claude/
+.tools/
+
+# personal data, build outputs and local tool state never belong in this public repo
+cli/daily-tasks.json
+*.daily-tasks.json
+coverage.out
+.hermes/

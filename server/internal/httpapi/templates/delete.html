@@ -1,0 +1,14 @@
+{{template "head" .}}
+<div class="card">
+<h1>Delete your Daily Tasks account</h1>
+<p>Deleting your account permanently removes, from our servers:</p>
+<ul>
+<li>your account record (sign-in identifier and email address), and</li>
+<li>all synced task data and task history.</li>
+</ul>
+<p>Deletion is immediate and cannot be undone. Encrypted database backups that may still contain your data expire within 30 days. Tasks stored locally on your devices are not touched; uninstall the app to remove them.</p>
+<p>You can also delete your account inside the app: <strong>Config → Delete account</strong>.</p>
+<p><a class="btn" href="{{.LoginURL}}">Sign in with Google to continue</a></p>
+<p class="muted">Can't sign in any more? Ask for deletion via {{template "contact" .}} and tell us the email address of your account.</p>
+</div>
+{{template "foot" .}}

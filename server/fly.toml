@@ -1,0 +1,43 @@
+app = "daily-tasks-api"
+primary_region = "cdg"  # Paris — closest available Fly.io region to Spain
+kill_signal = "SIGTERM"
+kill_timeout = "10s"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[deploy]
+  strategy = "rolling"
+
+[env]
+  PORT = "8080"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # OAuth state is signed (no in-memory state), so machines can stop when idle
+  # and any machine can serve any request. Cold start is ~1 s.
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 200
+    hard_limit = 250
+
+  # Speak HTTP/2 cleartext to the app so gRPC works end to end.
+  [http_service.http_options]
+    h2_backend = true
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval = "30s"
+    method = "GET"
+    path = "/health"
+    timeout = "5s"
+
+[[vm]]
+  memory = "256mb"
+  cpu_kind = "shared"
+  cpus = 1

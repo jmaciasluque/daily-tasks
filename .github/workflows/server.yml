@@ -1,0 +1,97 @@
+name: Server
+
+on:
+  push:
+    branches: [main]
+    paths: [server/**, proto/**, buf.*, Makefile, web/**, mobile/src/services/**, mobile/src/gen/**, mobile/src/types/**, .github/workflows/server.yml, .github/workflows/deploy-server.yml]
+  pull_request:
+    paths: [server/**, proto/**, buf.*, Makefile, web/**, mobile/src/services/**, mobile/src/gen/**, mobile/src/types/**, .github/workflows/server.yml, .github/workflows/deploy-server.yml]
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: dailytasks_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+      - name: Vet
+        working-directory: server
+        run: go vet ./...
+      - name: Test (race, real Postgres)
+        working-directory: server
+        env:
+          TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/dailytasks_test?sslmode=disable
+        run: go test -race -count=1 -coverprofile=coverage.out ./... && go tool cover -func=coverage.out | tail -1 >> "$GITHUB_STEP_SUMMARY"
+
+  proto:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v6
+        with:
+          # codegen tools track the latest Go release
+          go-version: stable
+          cache: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - name: Install protoc-gen-es
+        working-directory: mobile
+        run: npm ci --ignore-scripts
+      - name: Lint, breaking-change check, generated code is up to date
+        run: make proto-check
+
+  web-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            web/package-lock.json
+            mobile/package-lock.json
+      - name: Install mobile deps (types for the shared sync code)
+        working-directory: mobile
+        run: npm ci --ignore-scripts
+      - name: Build hosted web UI (also type-checks shared mobile code)
+        working-directory: web
+        run: npm ci && npm run build:hosted && npm run build
+      - name: Embed it and start the server (in-memory store, test login)
+        run: |
+          cp -R web/dist-hosted/. server/internal/webapp/dist/
+          (cd server && go build -o /tmp/dt-server ./cmd/server)
+          DEV_MEMORY_STORE=1 JWT_SECRET=$(openssl rand -hex 32) MASTER_KEY=$(openssl rand -base64 32) \
+            BASE_URL=http://localhost:18080 PORT=18080 TEST_LOGIN_SECRET=local /tmp/dt-server > /tmp/server.log 2>&1 &
+          for i in $(seq 1 30); do curl -fsS http://localhost:18080/health && break; sleep 1; done
+      - name: Browser end-to-end tests
+        working-directory: web
+        run: npx playwright install --with-deps chromium && npx playwright test
+      - name: Server log
+        if: failure()
+        run: cat /tmp/server.log

@@ -1,0 +1,44 @@
+{{define "head"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}}</title>
+<style>
+:root{--bg:#f6f7fb;--fg:#141c33;--muted:#5b6478;--card:#fff;--line:#e3e6ee;--accent:#ff7a50;--danger:#c62828}
+@media (prefers-color-scheme:dark){:root{--bg:#0e1426;--fg:#eef1f8;--muted:#a3abc0;--card:#161f38;--line:#26304d;--accent:#ff9a6a;--danger:#ff6b6b}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+main{max-width:720px;margin:0 auto;padding:32px 16px 64px}
+header{display:flex;align-items:center;gap:12px;margin-bottom:24px}
+header a{color:inherit;text-decoration:none;font-weight:700;font-size:20px}
+.mark{width:36px;height:36px;border-radius:9px;background:linear-gradient(#1b2440,#0e1426);display:grid;place-items:center}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:24px}
+h1{font-size:28px;line-height:1.2;margin:0 0 12px}
+h2{font-size:19px;margin:28px 0 8px}
+p,li{color:var(--fg)}
+.muted{color:var(--muted);font-size:14px}
+a{color:var(--accent)}
+.btn{display:inline-block;padding:12px 18px;border-radius:10px;border:0;font:inherit;font-weight:600;cursor:pointer;text-decoration:none;color:#fff;background:var(--accent)}
+.btn.danger{background:var(--danger)}
+footer{margin-top:32px;font-size:14px;color:var(--muted)}
+footer a{color:var(--muted);margin-right:16px}
+</style>
+</head>
+<body>
+<main>
+<header>
+<span class="mark"><svg width="24" height="24" viewBox="176 176 672 672" aria-hidden="true"><defs><linearGradient id="a" x1=".2" y1="0" x2=".8" y2="1"><stop offset="0" stop-color="#FFC24B"/><stop offset="1" stop-color="#FF6B57"/></linearGradient></defs><path d="M512 212A300 300 0 1 1 230.1 409.4" fill="none" stroke="url(#a)" stroke-width="72" stroke-linecap="round"/><path d="M372 522 470 618 664 412" fill="none" stroke="#fff" stroke-width="84" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+<a href="/">Daily Tasks</a>
+</header>
+{{end}}
+
+{{define "foot"}}
+<footer>
+<a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="/account/delete">Delete account</a><a href="https://github.com/jmaciasluque/daily-tasks">Source</a>
+</footer>
+</main>
+</body>
+</html>{{end}}
+
+{{define "contact"}}{{if .ContactEmail}}<a href="mailto:{{.ContactEmail}}">{{.ContactEmail}}</a>{{else}}<a href="https://github.com/jmaciasluque/daily-tasks/issues">the project's issue tracker</a>{{end}}{{end}}

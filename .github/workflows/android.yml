@@ -1,0 +1,60 @@
+name: Android
+
+# Builds an installable dev-variant APK (be.maclug.dailytasks.dev, JS bundled,
+# debug-signed) for every change to the app. Download it from the run's
+# artifacts and `adb install` it on an emulator or phone.
+on:
+  pull_request:
+    paths: [mobile/**, VERSION, .github/workflows/android.yml]
+  push:
+    branches: [main]
+    paths: [mobile/**, VERSION, .github/workflows/android.yml]
+  workflow_dispatch:
+    inputs:
+      variant:
+        description: App variant
+        type: choice
+        options: [testing, production]
+        default: testing
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      APP_VARIANT: ${{ inputs.variant || 'testing' }}
+      APP_VERSION_SUFFIX: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v5
+      - name: Install dependencies
+        working-directory: mobile
+        run: npm ci
+      - name: Generate native project
+        working-directory: mobile
+        run: npx expo prebuild --platform android --clean --no-install
+      - name: Assemble release APK (arm64 + x86_64)
+        working-directory: mobile/android
+        run: ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a,x86_64 --no-daemon
+      - name: Upload APK
+        uses: actions/upload-artifact@v5
+        with:
+          name: daily-tasks-${{ env.APP_VARIANT }}-${{ github.sha }}
+          path: mobile/android/app/build/outputs/apk/release/app-release.apk
+          retention-days: 14

@@ -1,0 +1,9 @@
+# TypeScript code for the mobile app (web UI joins in M5). Run `make proto` from the repo root.
+version: v2
+inputs:
+  - directory: proto
+plugins:
+  - local: mobile/node_modules/.bin/protoc-gen-es
+    out: mobile/src/gen
+    opt: target=ts,import_extension=none
+clean: true

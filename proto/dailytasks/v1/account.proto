@@ -1,0 +1,52 @@
+syntax = "proto3";
+
+package dailytasks.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// AccountService manages the signed-in account and its sessions. Sign-in
+// itself happens through the browser OAuth flow at /auth/{provider}, which
+// returns a session token used as "Authorization: Bearer <token>".
+service AccountService {
+  rpc GetAccount(GetAccountRequest) returns (GetAccountResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+
+  // RefreshSession returns a new full-length token. Clients call it when
+  // GetAccountResponse.refresh_recommended is true.
+  rpc RefreshSession(RefreshSessionRequest) returns (RefreshSessionResponse);
+
+  // RevokeAllSessions signs the account out on every device, including the
+  // caller.
+  rpc RevokeAllSessions(RevokeAllSessionsRequest) returns (RevokeAllSessionsResponse);
+
+  // DeleteAccount permanently removes the account and all synced data.
+  rpc DeleteAccount(DeleteAccountRequest) returns (DeleteAccountResponse);
+}
+
+message GetAccountRequest {}
+
+message GetAccountResponse {
+  string id = 1;
+  string email = 2;
+  // Identity provider, e.g. "google".
+  string provider = 3;
+  google.protobuf.Timestamp created_at = 4;
+  google.protobuf.Timestamp token_expires_at = 5;
+  bool refresh_recommended = 6;
+}
+
+message RefreshSessionRequest {}
+
+message RefreshSessionResponse {
+  string token = 1;
+  google.protobuf.Timestamp expires_at = 2;
+}
+
+message RevokeAllSessionsRequest {}
+
+message RevokeAllSessionsResponse {}
+
+message DeleteAccountRequest {}
+
+message DeleteAccountResponse {}

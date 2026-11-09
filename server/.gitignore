@@ -1,0 +1,2 @@
+internal/webapp/dist/*
+!internal/webapp/dist/README

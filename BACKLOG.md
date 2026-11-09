@@ -1,0 +1,86 @@
+# Backlog
+
+This file mirrors GitHub issues for agent-friendly scanning. Use issues for discussion and tracking.
+
+## Hosted backend (Fly.io)
+- [ ] #97 Define hosted backend architecture (Fly.io + Postgres + OAuth2) (labels: backend, architecture)
+- [x] #98 Implement hosted API server on Fly.io (labels: backend, architecture)
+- [x] #99 CLI: add hosted backend support (labels: cli, backend, configuration)
+- [x] #100 Mobile: add hosted backend OAuth login and sync (labels: mobile, backend, configuration)
+
+## Industrialization (see docs/ROADMAP.md) — GitHub issues pending
+
+### M1 Emulator on Fly.io
+- [x] Mobile: upgrade Expo SDK 54 → 58 and align expo-* modules (mobile, dependencies)
+- [x] Mobile: change application ID to be.maclug.dailytasks (mobile, release)
+- [x] Mobile: local Android build + emulator scripts (mobile, infra) — APK built in CI, emulator via adb
+- [x] Mobile: real app icon, adaptive/monochrome icon, splash, notification icon (mobile, ui, release)
+- [x] Mobile: hosted backend as default onboarding, Google only (mobile, backend, ui)
+
+### M2 Public-ready backend
+- [x] Server: stateless signed OAuth state; enable scale-to-zero (backend, infra, security)
+- [x] Account deletion: API, in-app button, public web page (done: API, RPC, web page, in-app) (backend, mobile, security, release)
+- [x] Server: privacy policy and terms pages (backend, release, documentation)
+- [x] Auth: sessions that don't expire silently after 30 days (backend, mobile, cli, security)
+- [x] Server: rate limiting, security headers, structured logs (backend, security)
+- [ ] Staging app on Fly.io + test-only login for CI/E2E (backend, infra, testing)
+- [ ] Cost review: database host and Fly machine sizing (backend, infra)
+
+### M3 Connect RPC API
+- [x] API v2: protobuf contract with buf (lint, breaking, codegen) (backend, architecture)
+- [x] Server: Connect handlers alongside REST v1 (backend)
+- [x] Mobile: switch hosted backend to Connect client (mobile, backend)
+- [x] CLI: switch hosted backend to Connect, gRPC protocol (cli, backend)
+
+### M4 Play Store release
+- [x] CI: single PR pipeline incl. server+Postgres and Android APK build (infra, testing)
+- [x] E2E smoke tests: Playwright for web (CI), adb script for the emulator (mobile, testing) — staging target pending
+- [x] Release pipeline: signed AAB on tag → Play internal track (release, infra)
+- [ ] Play Store listing: text, feature graphic, data safety done in mobile/store/listing.md; screenshots + console entry pending (release, documentation)
+
+### M5 Remote follow-up
+- [x] Hosted web UI on Fly.io (web, backend)
+
+## Earlier backend work
+- [x] #5 Define multi-backend interface and sync contract (labels: backend, architecture)
+- [ ] #6 Add backend registry for additional backend types (labels: backend, configuration)
+- [x] #7 Persist backend selection across clients (labels: backend, configuration, ui)
+- [x] #12 Event replay/aggregation for current state (labels: backend, architecture, dml)
+- [ ] #13 Define multi-backend conflict/merge policy (labels: backend, architecture)
+
+## Data model
+- [x] #8 Extend task schema: visibility rules, AM/PM, deadline (labels: ddl, backend)
+- [x] #9 Add history/event log schema (labels: ddl, dml, backend)
+- [x] #10 Add data/history migration + versioning (labels: backend, configuration)
+- [x] #11 Record history for all mutations (labels: dml, backend)
+
+## Behavior
+- [x] #14 Implement visibility filters by day (labels: backend, ui)
+- [x] #15 Daily reset respects visibility rules (labels: dml, backend)
+- [x] #66 Add task history and stats across CLI, web, and mobile (labels: backend, cli, mobile, web, ui, testing)
+
+## Clients
+### CLI
+- [x] #16 CLI first-run configuration TUI gating (labels: cli, ui, configuration)
+- [x] #17 Add non-TUI CLI commands (labels: cli, ui)
+- [x] #18 CLI: AM/PM grouping + deadline indicator (labels: cli, ui)
+
+### Mobile
+- [ ] #19 Mobile: backend chooser for new backends (labels: mobile, ui, configuration)
+- [x] #20 Mobile: AM/PM grouping for deadline tasks (labels: mobile, ui)
+
+### Web
+- [x] #21 Web app scaffold with local backend (labels: web, ui, backend)
+- [x] #22 Web: backend selection UI (labels: web, ui, configuration)
+- [ ] #59 QR-based Nextcloud config transfer across clients (labels: cli, mobile, web, configuration)
+
+## Docs & tests
+- [ ] #23 Update schema/docs + migrations guide (labels: documentation, backend, configuration)
+- [x] #24 Add tests for visibility/deadline/history/reset (labels: testing, backend)
+
+## Consistency & hardening
+- [x] #26 Align last_modified units across clients + schema (labels: documentation, backend, ddl)
+- [x] #27 Standardize last_reset date handling (local vs UTC) (labels: documentation, backend, dml, testing)
+- [x] #28 Unify sync action semantics between CLI and mobile (labels: backend, cli, mobile)
+- [x] #29 Harden CLI WebDAV not-found handling (labels: backend, cli, testing)
+- [x] #30 Add remaining mobile tests for hooks and notification sync edge cases (labels: backend, mobile, testing)
