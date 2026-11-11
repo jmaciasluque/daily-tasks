@@ -172,7 +172,7 @@ func (s *Server) putSync(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, 2*service.MaxDocumentBytes*4/3+1024)
+	r.Body = http.MaxBytesReader(w, r.Body, (service.MaxDataBytes+service.MaxHistoryBytes)*4/3+1024)
 	var req syncPayload
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid body")

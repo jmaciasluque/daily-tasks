@@ -10,6 +10,14 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 
 ---
 
+## [Unreleased]
+
+### Fixed
+- Server: the stats history may now be up to 4 MiB (task data stays at
+  512 KiB). The single 512 KiB cap rejected accounts with more than a few
+  months of history, which blocked moving an existing task list to the hosted
+  backend. Request bodies on the Connect API are now bounded as well.
+
 ## [0.20.1] - 2026-11-09
 
 ### Changed

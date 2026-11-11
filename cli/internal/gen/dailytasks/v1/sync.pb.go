@@ -141,7 +141,7 @@ type PutStateRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// UTF-8 JSON object, at most 512 KiB.
 	Data []byte `protobuf:"bytes,1,opt,name=data,proto3" json:"data,omitempty"`
-	// UTF-8 JSON object, at most 512 KiB.
+	// UTF-8 JSON object, at most 4 MiB.
 	History []byte `protobuf:"bytes,2,opt,name=history,proto3" json:"history,omitempty"`
 	// Types that are valid to be assigned to Precondition:
 	//

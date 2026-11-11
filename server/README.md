@@ -51,7 +51,7 @@ internal/gen       generated from ../proto by `make proto` (do not edit)
 - **Concurrency**: whole-document writes guarded by etags
   (`"sync-<updated_at ns>"`); stale writes fail with HTTP 412 /
   `FAILED_PRECONDITION` and the client merges and retries.
-- **Abuse limits**: 512 KiB per document, JSON objects only, per-IP rate limits.
+- **Abuse limits**: 512 KiB of task data and 4 MiB of history per account, JSON objects only, per-IP rate limits.
 
 ## Configuration
 

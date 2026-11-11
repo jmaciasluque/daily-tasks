@@ -82,7 +82,7 @@ export type PutStateRequest = Message<"dailytasks.v1.PutStateRequest"> & {
   data: Uint8Array;
 
   /**
-   * UTF-8 JSON object, at most 512 KiB.
+   * UTF-8 JSON object, at most 4 MiB.
    *
    * @generated from field: bytes history = 2;
    */

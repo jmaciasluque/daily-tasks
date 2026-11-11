@@ -140,10 +140,11 @@ func TestPutStateValidatesDocuments(t *testing.T) {
 	ctx := context.Background()
 	u, _ := login(t, svc, "erin")
 	cases := map[string][2][]byte{
-		"not json":       {[]byte("nope"), []byte(`{}`)},
-		"json array":     {[]byte(`[]`), []byte(`{}`)},
-		"history broken": {[]byte(`{}`), []byte(`{`)},
-		"too big":        {[]byte(`{"x":"` + strings.Repeat("a", MaxDocumentBytes) + `"}`), []byte(`{}`)},
+		"not json":        {[]byte("nope"), []byte(`{}`)},
+		"json array":      {[]byte(`[]`), []byte(`{}`)},
+		"history broken":  {[]byte(`{}`), []byte(`{`)},
+		"data too big":    {[]byte(`{"x":"` + strings.Repeat("a", MaxDataBytes) + `"}`), []byte(`{}`)},
+		"history too big": {[]byte(`{}`), []byte(`{"x":"` + strings.Repeat("a", MaxHistoryBytes) + `"}`)},
 	}
 	for name, docs := range cases {
 		if _, err := svc.PutState(ctx, u.ID, docs[0], docs[1], Precondition{}); !errors.Is(err, ErrInvalidArgument) {

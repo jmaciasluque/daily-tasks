@@ -16,10 +16,15 @@ import (
 	"daily-tasks-server/internal/store"
 )
 
-// MaxDocumentBytes caps each of the data and history JSON documents. A busy
-// user's data file is a few KB; this leaves plenty of headroom while keeping
-// the backend from becoming free file hosting.
-const MaxDocumentBytes = 512 << 10
+// Size caps for the two JSON documents. They keep the backend from becoming
+// free file hosting while leaving real users plenty of headroom.
+const (
+	// MaxDataBytes caps the task list; a busy user's is a few KB.
+	MaxDataBytes = 512 << 10
+	// MaxHistoryBytes caps the stats history, which grows with every day of
+	// use: roughly 1.5-2.5 MB per year for a user with ~25 daily tasks.
+	MaxHistoryBytes = 4 << 20
+)
 
 // EmptyETag is the concurrency token of a user who has never stored data.
 const EmptyETag = `"empty"`
@@ -168,10 +173,10 @@ type Precondition struct {
 
 // PutState validates, encrypts and stores both documents atomically.
 func (s *Service) PutState(ctx context.Context, userID string, data, history []byte, pre Precondition) (*State, error) {
-	if err := validateDocument("data", data); err != nil {
+	if err := validateDocument("data", data, MaxDataBytes); err != nil {
 		return nil, err
 	}
-	if err := validateDocument("history", history); err != nil {
+	if err := validateDocument("history", history, MaxHistoryBytes); err != nil {
 		return nil, err
 	}
 	expect, err := expectation(pre)
@@ -202,9 +207,9 @@ func (s *Service) PutState(ctx context.Context, userID string, data, history []b
 	return &State{Exists: true, Data: data, History: history, ETag: ETag(updated), UpdatedAt: updated}, nil
 }
 
-func validateDocument(name string, doc []byte) error {
-	if len(doc) > MaxDocumentBytes {
-		return fmt.Errorf("%w: %s exceeds %d bytes", ErrInvalidArgument, name, MaxDocumentBytes)
+func validateDocument(name string, doc []byte, limit int) error {
+	if len(doc) > limit {
+		return fmt.Errorf("%w: %s exceeds %d bytes", ErrInvalidArgument, name, limit)
 	}
 	var probe map[string]json.RawMessage
 	if err := json.Unmarshal(doc, &probe); err != nil {

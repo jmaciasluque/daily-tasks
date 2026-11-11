@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"daily-tasks-server/internal/auth"
+	"daily-tasks-server/internal/service"
 	"daily-tasks-server/internal/testutil"
 )
 
@@ -122,6 +123,36 @@ func TestRESTv1SyncIsWireCompatible(t *testing.T) {
 	data, _ := base64.StdEncoding.DecodeString(got["data"])
 	if string(data) != `{"tasks":[1]}` || got["updated_at"] == "" {
 		t.Fatalf("final GET: %s %v", data, got)
+	}
+}
+
+// A long-lived account's history runs to megabytes and must fit in a REST PUT.
+func TestRESTv1SyncAcceptsLargeHistory(t *testing.T) {
+	env := testutil.New(t)
+	tok := testToken(t, env, "rest-big")
+	u := env.Server.URL + "/api/v1/sync"
+	doc := func(n int) string { return `{"x":"` + strings.Repeat("a", n-len(`{"x":""}`)) + `"}` }
+	put := func(data, history string) int {
+		body, _ := json.Marshal(map[string]string{
+			"data":    base64.StdEncoding.EncodeToString([]byte(data)),
+			"history": base64.StdEncoding.EncodeToString([]byte(history)),
+		})
+		return do(t, "PUT", u, tok, strings.NewReader(string(body)), map[string]string{"Content-Type": "application/json"}).StatusCode
+	}
+	if code := put(doc(service.MaxDataBytes), doc(service.MaxHistoryBytes)); code != 200 {
+		t.Fatalf("documents at the limit: %d", code)
+	}
+	if code := put(`{}`, doc(service.MaxHistoryBytes+1)); code != 400 {
+		t.Fatalf("history over the limit: %d", code)
+	}
+	if code := put(doc(service.MaxDataBytes+1), `{}`); code != 400 {
+		t.Fatalf("data over the limit: %d", code)
+	}
+	var got map[string]string
+	json.NewDecoder(do(t, "GET", u, tok, nil, nil).Body).Decode(&got)
+	history, _ := base64.StdEncoding.DecodeString(got["history"])
+	if len(history) != service.MaxHistoryBytes {
+		t.Fatalf("stored history: %d bytes", len(history))
 	}
 }
 
