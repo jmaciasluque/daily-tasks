@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net"
 	"net/http"
+	"strings"
 	"testing"
 
 	"connectrpc.com/connect"
@@ -13,6 +14,7 @@ import (
 
 	v1 "daily-tasks-server/internal/gen/dailytasks/v1"
 	"daily-tasks-server/internal/gen/dailytasks/v1/dailytasksv1connect"
+	"daily-tasks-server/internal/service"
 	"daily-tasks-server/internal/testutil"
 )
 
@@ -109,6 +111,44 @@ func TestSyncOverEveryProtocol(t *testing.T) {
 			got, err = sync.GetState(ctx, connect.NewRequest(&v1.GetStateRequest{}))
 			if err != nil || !got.Msg.Exists || string(got.Msg.Data) != `{"tasks":[1]}` || got.Msg.Etag != updated.Msg.Etag || got.Msg.UpdatedAt == nil {
 				t.Fatalf("final GetState: %+v %v", got.Msg, err)
+			}
+		})
+	}
+}
+
+// jsonDoc returns a JSON object of exactly n bytes.
+func jsonDoc(n int) []byte {
+	return []byte(`{"x":"` + strings.Repeat("a", n-len(`{"x":""}`)) + `"}`)
+}
+
+// A long-lived account's history runs to megabytes; it must fit over every
+// protocol, including the JSON codec that base64-encodes it.
+func TestLargeHistoryOverEveryProtocol(t *testing.T) {
+	full := jsonDoc(service.MaxHistoryBytes)
+	for _, p := range protocols {
+		t.Run(p.name, func(t *testing.T) {
+			env := testutil.New(t)
+			ctx := context.Background()
+			tok := login(t, env, "big-"+p.name)
+			sync := dailytasksv1connect.NewSyncServiceClient(p.client(), env.Server.URL, append(p.opts, bearer(tok))...)
+
+			if _, err := sync.PutState(ctx, connect.NewRequest(&v1.PutStateRequest{Data: jsonDoc(service.MaxDataBytes), History: full})); err != nil {
+				t.Fatalf("documents at the limit: %v", err)
+			}
+			got, err := sync.GetState(ctx, connect.NewRequest(&v1.GetStateRequest{}))
+			if err != nil {
+				t.Fatalf("GetState: %v", err)
+			}
+			if len(got.Msg.History) != len(full) || len(got.Msg.Data) != service.MaxDataBytes {
+				t.Fatalf("GetState: data=%d history=%d", len(got.Msg.Data), len(got.Msg.History))
+			}
+			_, err = sync.PutState(ctx, connect.NewRequest(&v1.PutStateRequest{Data: []byte(`{}`), History: jsonDoc(service.MaxHistoryBytes + 1)}))
+			if connect.CodeOf(err) != connect.CodeInvalidArgument {
+				t.Fatalf("history over the limit: %v", err)
+			}
+			_, err = sync.PutState(ctx, connect.NewRequest(&v1.PutStateRequest{Data: []byte(`{}`), History: jsonDoc(4 * service.MaxHistoryBytes)}))
+			if code := connect.CodeOf(err); code != connect.CodeResourceExhausted && code != connect.CodeInvalidArgument {
+				t.Fatalf("oversized request: %v", err)
 			}
 		})
 	}

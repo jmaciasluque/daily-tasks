@@ -40,7 +40,7 @@ message GetStateResponse {
 message PutStateRequest {
   // UTF-8 JSON object, at most 512 KiB.
   bytes data = 1;
-  // UTF-8 JSON object, at most 512 KiB.
+  // UTF-8 JSON object, at most 4 MiB.
   bytes history = 2;
   oneof precondition {
     // Write only if the stored state still has this etag.

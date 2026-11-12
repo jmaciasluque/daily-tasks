@@ -72,7 +72,13 @@ func toConnectError(err error) error {
 
 // Handlers returns the Connect handlers keyed by their mux pattern.
 func Handlers(svc *service.Service, logger *slog.Logger) map[string]http.Handler {
-	opts := connect.WithInterceptors(errorLogger(logger), authInterceptor(svc))
+	opts := connect.WithHandlerOptions(
+		connect.WithInterceptors(errorLogger(logger), authInterceptor(svc)),
+		// Bound request bodies before they are buffered; the service enforces
+		// the exact per-document limits. The 4/3 allows for the JSON codec,
+		// which carries bytes fields as base64.
+		connect.WithReadMaxBytes((service.MaxDataBytes+service.MaxHistoryBytes)*4/3+64<<10),
+	)
 	out := map[string]http.Handler{}
 	path, h := dailytasksv1connect.NewSyncServiceHandler(&syncServer{svc: svc}, opts)
 	out[path] = h

@@ -40,6 +40,7 @@ This file mirrors GitHub issues for agent-friendly scanning. Use issues for disc
 
 ### M5 Remote follow-up
 - [x] Hosted web UI on Fly.io (web, backend)
+- [ ] History growth: every sync uploads the whole history (~1.5-2.5 MB per year of use). Stats only read `days`; cap or drop old `events`, and/or sync history incrementally, before accounts near the 4 MiB server cap (backend, mobile, cli, web)
 
 ## Earlier backend work
 - [x] #5 Define multi-backend interface and sync contract (labels: backend, architecture)
